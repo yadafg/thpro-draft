@@ -26,11 +26,33 @@ function newCode(){
 }
 
 // 曲名の表記ゆれを吸収して重複判定に使う
+// 例：
+//   千年幻想郷 / 1000年幻想郷 / せんねんげんそうきょー
+// を同じグループとして扱う。
+const TITLE_ALIASES = new Map([
+  ['千年幻想郷','1000年幻想郷'],
+  ['1000年幻想郷','1000年幻想郷'],
+  ['センネンゲンソウキョウ','1000年幻想郷'],
+  ['センネンゲンソウキョ','1000年幻想郷'],
+  ['センネンゲンソウキョー','1000年幻想郷']
+]);
+
 function norm(s){
-  return String(s || '').normalize('NFKC').toLowerCase()
+  const basic = String(s || '').normalize('NFKC').toLowerCase()
     .replace(/[ぁ-ゖ]/g, c => String.fromCharCode(c.charCodeAt(0) + 0x60))
     .replace(/ヴ/g, 'ブ')
     .replace(/[\s・､、。,.!?！？「」『』（）()~〜～ー\-_＝=:：;；/／]/g, '');
+  if (TITLE_ALIASES.has(basic)) return TITLE_ALIASES.get(basic);
+
+  // 日本語の代表的な数表記を数字へ寄せる。
+  // 「千年」「2000年」などを同一視するための補助。
+  return basic
+    .replace(/^ニセン/, '2000')
+    .replace(/^イッセン/, '1000')
+    .replace(/^セン/, '1000')
+    .replace(/^千/, '1000')
+    .replace(/^二千/, '2000')
+    .replace(/^一千/, '1000');
 }
 
 function findRoom(code){
@@ -73,17 +95,30 @@ function stateFor(room, role, viewerId){
       const id = room.revealOrder[room.revealIndex];
       const pl = room.players.find(p => p.id === id);
       const sub = room.subs[id];
-      base.reveal = pl && sub ? { id, name: pl.name, song: room.revealShown ? sub.song : null } : null;
+      base.reveal = pl && sub ? { id, name: pl.name, song: sub.song } : null;
     } else {
       base.reveal = null;
     }
-    if (room.phase === 'decide'){
-      base.groups = room.groups.map(g => ({
-        key: g.key, song: g.song, ids: g.ids,
-        decision: g.decision || null, winner: g.winner || null
+    if (room.phase === 'decide' || room.phase === 'lottery'){
+      base.submissions = room.revealOrder.map(id => {
+        const p = room.players.find(x=>x.id===id);
+        const s = room.subs[id];
+        const g = s ? room.groups.find(x=>x.key===norm(s.song)) : null;
+        return p && s ? {
+          id, name:p.name, song:s.song, key:g ? g.key : norm(s.song),
+          decision:g ? (g.decision || null) : null,
+          winner:g ? (g.winner || null) : null
+        } : null;
+      }).filter(Boolean);
+      base.lotteryCandidates = room.groups.filter(g=>g.decision==='lottery').map(g=>({
+        key:g.key, song:g.song, ids:g.ids, winner:g.winner||null,
+        selected:room.currentLotteryKey===g.key
       }));
+      base.currentLotteryKey = room.currentLotteryKey || null;
     } else {
-      base.groups = [];
+      base.submissions = [];
+      base.lotteryCandidates = [];
+      base.currentLotteryKey = null;
     }
   }
   return base;
@@ -148,8 +183,8 @@ function doConfirm(room){
   room.revealOrder = [];
   room.revealIndex = 0;
   room.revealShown = false;
+  room.currentLotteryKey = null;
   room.subs = {};
-
   if (!activeIds(room).length){
     finishRoom(room);
     return;
@@ -190,7 +225,7 @@ const api = {
     const room = {
       code: newCode(), hostToken: token(), cap, rounds, mode,
       status:'lobby', round:1, wave:1, phase:'input',
-      players:[], pending:[], subs:{}, groups:[], revealOrder:[], revealIndex:0, revealShown:false,
+      players:[], pending:[], subs:{}, groups:[], revealOrder:[], revealIndex:0, revealShown:false, currentLotteryKey:null,
       acquired:[], clients:new Set(), v:0, touched:Date.now()
     };
     rooms.set(room.code, room);
@@ -217,7 +252,7 @@ const api = {
     if (room.players.length < 2) return {ok:false,error:'2名以上で開始できます。'};
     room.status='playing'; room.round=1; room.wave=1; room.phase='input';
     room.players.forEach(p=>p.ended=false);
-    room.pending=activeIds(room); room.subs={}; room.groups=[]; room.revealOrder=[]; room.revealIndex=0; room.revealShown=false; room.acquired=[];
+    room.pending=activeIds(room); room.subs={}; room.groups=[]; room.revealOrder=[]; room.revealIndex=0; room.revealShown=false; room.currentLotteryKey=null; room.acquired=[];
     broadcast(room);
     return {ok:true};
   },
@@ -254,7 +289,7 @@ const api = {
 
   revealSong(room){
     if(room.phase!=='reveal') return {ok:false,error:'いまは指名発表中ではありません。'};
-    if(!room.revealOrder.length) { buildGroups(room); broadcast(room); return {ok:true}; }
+    if(!room.revealOrder.length) return {ok:false,error:'表示する指名がありません。'};
     room.revealShown = true;
     broadcast(room);
     return {ok:true};
@@ -262,7 +297,6 @@ const api = {
 
   nextReveal(room){
     if(room.phase!=='reveal') return {ok:false,error:'いまは指名発表中ではありません。'};
-    if(!room.revealShown) return {ok:false,error:'先にこの人の指名を表示してください。'};
     if(!room.revealOrder.length) { buildGroups(room); broadcast(room); return {ok:true}; }
     if(room.revealIndex < room.revealOrder.length-1){
       room.revealIndex += 1;
@@ -275,41 +309,61 @@ const api = {
   },
 
   decision(room, body){
-    if(room.phase!=='decide') return {ok:false,error:'いまは抽選方法を決める段階ではありません。'};
+    if(room.phase!=='decide') return {ok:false,error:'いまは単独指名を指定する段階ではありません。'};
     const g=room.groups.find(x=>x.key===body.key);
-    if(!g) return {ok:false,error:'その曲の決定が見つかりません。'};
-    const mode=body.mode==='solo'?'solo':body.mode==='lottery'?'lottery':null;
-    if(!mode) return {ok:false,error:'決定方法が正しくありません。'};
-    g.decision=mode; g.winner=(mode==='solo' && g.ids.length===1)?g.ids[0]:null;
+    if(!g) return {ok:false,error:'その曲の指定が見つかりません。'};
+    const mode=body.mode==='solo'?'solo':body.mode==='clear'?'clear':null;
+    if(!mode) return {ok:false,error:'指定方法が正しくありません。'};
+    g.decision = mode==='solo' ? 'solo' : null;
+    g.winner = mode==='solo' && g.ids.length===1 ? g.ids[0] : null;
     broadcast(room);
     return {ok:true};
   },
 
-  draw(room, body){
-    if(room.phase!=='decide') return {ok:false,error:'いまは抽選できません。'};
+  startLottery(room){
+    if(room.phase!=='decide') return {ok:false,error:'いまは抽選候補を決める段階ではありません。'};
+    // 「単独指名」に指定されていない楽曲はすべて抽選候補へ回す。
+    for(const g of room.groups){
+      if(g.decision!=='solo'){
+        g.decision='lottery';
+        g.winner=null;
+      }
+    }
+    room.currentLotteryKey=null;
+    room.phase='lottery';
+    broadcast(room);
+    return {ok:true};
+  },
+
+  selectLottery(room, body){
+    if(room.phase!=='lottery') return {ok:false,error:'いまは抽選する楽曲を選ぶ段階ではありません。'};
+    const g=room.groups.find(x=>x.key===body.key && x.decision==='lottery');
+    if(!g) return {ok:false,error:'その楽曲は抽選候補にありません。'};
+    if(g.winner) return {ok:false,error:'その楽曲はすでに抽選済みです。'};
+    room.currentLotteryKey=g.key;
+    broadcast(room);
+    return {ok:true,key:g.key};
+  },
+
+  winner(room, body){
+    if(room.phase!=='decide' && room.phase!=='lottery') return {ok:false,error:'いまは獲得者を決める段階ではありません。'};
     const c=room.groups.find(x=>x.key===body.key);
-    if(!c) return {ok:false,error:'その抽選は見つかりません。'};
-    if(c.decision!=='lottery') return {ok:false,error:'この曲は抽選に設定されていません。'};
-    if(c.winner) return {ok:false,error:'すでに当選者が決まっています。'};
-    c.winner=c.ids[crypto.randomInt(c.ids.length)];
+    if(!c) return {ok:false,error:'その曲の決定が見つかりません。'};
+    if(c.winner) return {ok:false,error:'すでに獲得者が決まっています。'};
+    if(!c.ids.includes(body.playerId)) return {ok:false,error:'その参加者は候補にいません。'};
+    if(room.phase==='decide' && c.decision!=='solo') return {ok:false,error:'単独指名に指定した楽曲だけ獲得者を決められます。'};
+    if(room.phase==='lottery' && (c.decision!=='lottery' || room.currentLotteryKey!==c.key)) return {ok:false,error:'先にこの楽曲を抽選対象として選択してください。'};
+    c.winner=body.playerId;
+    if(room.phase==='lottery') room.currentLotteryKey=null;
     broadcast(room);
     return {ok:true,winner:c.winner};
   },
 
-  winner(room, body){
-    if(room.phase!=='decide') return {ok:false,error:'いまは当選者を決める段階ではありません。'};
-    const c=room.groups.find(x=>x.key===body.key);
-    if(!c) return {ok:false,error:'その曲の決定が見つかりません。'};
-    if(c.decision!=='solo' && c.decision!=='lottery') return {ok:false,error:'この曲は当選者を決められる状態ではありません。'};
-    if(!c.ids.includes(body.playerId)) return {ok:false,error:'その参加者は候補にいません。'};
-    c.winner=body.playerId;
-    broadcast(room);
-    return {ok:true};
-  },
-
   confirm(room){
-    if(room.phase!=='decide') return {ok:false,error:'いまは確定できません。'};
-    if(room.groups.some(g=>!g.decision || !g.winner)) return {ok:false,error:'すべての曲について「単独指名／抽選」と当選者を決めてください。'};
+    if(room.phase!=='lottery') return {ok:false,error:'いまは結果を確定できません。'};
+    const lottery = room.groups.filter(g=>g.decision==='lottery');
+    if(lottery.length && lottery.some(g=>!g.winner)) return {ok:false,error:'すべての抽選候補の当選者を決定してください。'};
+    if(room.groups.some(g=>g.decision==='solo' && !g.winner)) return {ok:false,error:'単独指名にした楽曲の獲得者が未決定です。'};
     doConfirm(room);
     broadcast(room);
     return {ok:true};
@@ -318,7 +372,7 @@ const api = {
   reset(room){
     room.status='lobby'; room.round=1; room.wave=1; room.phase='input';
     room.players.forEach(p=>p.ended=false);
-    room.pending=[]; room.subs={}; room.groups=[]; room.revealOrder=[]; room.revealIndex=0; room.revealShown=false; room.acquired=[];
+    room.pending=[]; room.subs={}; room.groups=[]; room.revealOrder=[]; room.revealIndex=0; room.revealShown=false; room.currentLotteryKey=null; room.acquired=[];
     broadcast(room);
     return {ok:true};
   }
@@ -430,7 +484,7 @@ const server = http.createServer(async (req, res) => {
       const room = findRoom(body.code);
       if (!room) return send(res, 404, { ok: false, error: '部屋が見つかりません。サーバが再起動されたかもしれません。' });
 
-      const hostOnly = ['start', 'revealSong', 'nextReveal', 'decision', 'draw', 'winner', 'confirm', 'reset'];
+      const hostOnly = ['start', 'revealSong', 'nextReveal', 'decision', 'startLottery', 'selectLottery', 'winner', 'confirm', 'reset'];
       if (hostOnly.includes(action)){
         if (!isHost(room, body.token)) return send(res, 403, { ok: false, error: 'ホストだけが操作できます。' });
         return send(res, 200, api[action](room, body));

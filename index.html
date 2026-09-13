@@ -592,51 +592,78 @@ function viewHostGame(){
   }
 
   if(r.phase==='decide'){
-    const groups=r.groups||[];
-    const ready=groups.every(g=>g.decision && g.winner);
+    const subs=r.submissions||[];
+    const solos=[...new Set(subs.filter(x=>x.decision==='solo').map(x=>x.key))];
     return head + `<div class="panel tight">
-      <h2>単独指名 / 抽選を決定</h2>
-      <p class="note">全員の指名を確認しました。曲ごとにホストが「単独指名」か「抽選」かを決めてください。</p>
-      ${groups.length ? groups.map((g,i)=>decisionHost(g,i)).join('') : '<p class="note">指名はありませんでした。</p>'}
+      <h2>単独指名を指定</h2>
+      <p class="note">指名一覧から、単独指名にする楽曲だけを選択してください。ここで選ばなかった楽曲は、すべて抽選リストに入ります。</p>
+      ${subs.length ? subs.map((x,i)=>decisionRowHost(x,i,solos.includes(x.key))).join('') : '<p class="note">指名はありませんでした。</p>'}
     </div>
-    <button class="btn" id="confirm" ${!groups.length||!ready||S.busy?'disabled':''}>この結果で確定する</button>
-    ${!ready&&groups.length?'<p class="note center">すべての曲の決定を終えると確定できます。</p>':''}
+    <button class="btn" id="startLottery" ${!subs.length||S.busy?'disabled':''}>単独指名を確定して抽選リストへ</button>
+    ${errBox()}`;
+  }
+
+  if(r.phase==='lottery'){
+    const list=r.lotteryCandidates||[];
+    const selected=r.currentLotteryKey;
+    const current=list.find(g=>g.key===selected);
+    const done=list.filter(g=>g.winner).length;
+    const ready=list.length===0 || done===list.length;
+    return head + `<div class="panel tight">
+      <h2>抽選リスト</h2>
+      <p class="note">単独指名に指定されなかった楽曲です。ホストが抽選する楽曲を選び、当選者を決定してください。</p>
+      ${list.length ? list.map((g,i)=>lotteryCandidateHost(g,i,selected===g.key)).join('') : '<p class="note">抽選対象はありません。</p>'}
+      ${current ? `<div class="panel" style="margin:12px 0 0"><h2>現在の抽選</h2>
+        <div class="pick contest"><div class="song">${esc(current.song)}</div>
+        <div class="cands">候補者：${current.ids.map(id=>esc(nameOf(id))).join(' ／ ')}</div>
+        ${current.winner ? `<div class="winner">当選者　${esc(nameOf(current.winner))}</div>` : `
+          <div class="lottery"><p class="note">当選者を選択してください。</p>
+          ${current.ids.map(id=>`<button class="cand-btn" data-win="${esc(current.key)}" data-id="${esc(id)}">${esc(nameOf(id))}を当選者にする</button>`).join('')}
+          </div>`}
+        </div></div>` : ''}
+      ${list.length?`<p class="note center">抽選済み ${done} / ${list.length}</p>`:''}
+    </div>
+    <button class="btn" id="confirm" ${!ready||S.busy?'disabled':''}>${list.length?'抽選結果を確定して次の再指名へ':'結果を確定する'}</button>
+    ${!ready?'<p class="note center">抽選リストのすべての楽曲を処理してください。</p>':''}
     ${errBox()}`;
   }
 
   return head;
 }
 
-function decisionHost(g,i){
-  const winnerName=g.winner?nameOf(g.winner):'';
-  let body='';
-  if(!g.decision){
-    body=`<div class="lottery">
-      <p class="note">${g.ids.length>1?`重複指名：${g.ids.map(id=>esc(nameOf(id))).join(' ／ ')}`:`指名者：${esc(nameOf(g.ids[0]))}`}</p>
-      <button class="cand-btn" data-decision="solo" data-key="${esc(g.key)}">単独指名にする</button>
-      <button class="cand-btn" data-decision="lottery" data-key="${esc(g.key)}">抽選にする</button>
-    </div>`;
-  } else if(g.decision==='lottery'){
-    body=`<div class="lottery">
-      <div class="winner">抽選に設定</div>
-      ${winnerName ? `<div class="winner">交渉権獲得　${esc(winnerName)}</div>` : `
-        <p class="note">当選者をこの画面で選択してください。</p>
-        ${g.ids.map(id=>`<button class="cand-btn" data-win="${esc(g.key)}" data-id="${esc(id)}">${esc(nameOf(id))}を当選者にする</button>`).join('')}`}
-      <button class="cand-btn" data-decision="solo" data-key="${esc(g.key)}">単独指名に変更する</button>
-    </div>`;
-  } else {
-    body=`<div class="lottery">
-      <div class="winner">単独指名に設定</div>
-      ${winnerName?`<div class="winner">獲得者　${esc(winnerName)}</div>`:
-        `<p class="note">誰を獲得者にするか選んでください。</p>
-         ${g.ids.map(id=>`<button class="cand-btn" data-win="${esc(g.key)}" data-id="${esc(id)}">${esc(nameOf(id))}を獲得者にする</button>`).join('')}`}
-      <button class="cand-btn" data-decision="lottery" data-key="${esc(g.key)}">抽選に変更する</button>
+function decisionRowHost(x,i,isSolo){
+  const subs=S.room.submissions||[];
+  const same=subs.filter(y=>y.key===x.key);
+  const first=same[0];
+  const isFirst=first && first.id===x.id;
+  const names=same.map(y=>esc(y.name)).join(' ／ ');
+  const winner=same.find(y=>y.winner)?.winner;
+  if(!isFirst){
+    return `<div class="pick ${same.length>1?'contest':''}">
+      <div class="who">${i+1}. ${esc(x.name)}</div>
+      <div class="song">${esc(x.song)}</div>
+      ${same.length>1?`<div class="cands">同じ楽曲への重複指名：${names}</div>`:''}
+      ${isSolo?'<div class="winner">この楽曲を単独指名に指定済み</div>':'<div class="cands">上の同一楽曲とまとめて扱います</div>'}
     </div>`;
   }
-  return `<div class="pick ${g.ids.length>1?'contest':''}">
+  return `<div class="pick ${same.length>1?'contest':''}">
+    <div class="who">${i+1}. ${esc(x.name)}</div>
+    <div class="song">${esc(x.song)}</div>
+    ${same.length>1?`<div class="cands">同じ楽曲への指名：${names}</div>`:''}
+    ${isSolo ? `<div class="winner">単独指名に指定済み${winner?`　獲得者：${esc(nameOf(winner))}`:''}</div>
+      ${same.length>1 && !winner ? same.map(y=>`<button class="cand-btn" data-win="${esc(x.key)}" data-id="${esc(y.id)}">${esc(y.name)}を獲得者にする</button>`).join(''):''}
+      <button class="cand-btn" data-decision="clear" data-key="${esc(x.key)}">単独指定を解除</button>`
+      : `<button class="cand-btn" data-decision="solo" data-key="${esc(x.key)}">この楽曲を単独指名にする</button>`}
+  </div>`;
+}
+
+function lotteryCandidateHost(g,i,selected){
+  const done=!!g.winner;
+  return `<div class="pick contest ${selected?'':'lottery-candidate'}">
     <div class="song">${esc(g.song)}</div>
-    <div class="cands">指名者：${g.ids.map(id=>esc(nameOf(id))).join(' ／ ')}</div>
-    ${body}
+    <div class="cands">候補者：${g.ids.map(id=>esc(nameOf(id))).join(' ／ ')}</div>
+    ${done ? `<div class="winner">抽選済み　当選者：${esc(nameOf(g.winner))}</div>` :
+      selected ? `<div class="winner">現在の抽選対象</div>` : `<button class="cand-btn" data-lottery-key="${esc(g.key)}">この楽曲を抽選する</button>`}
   </div>`;
 }
 
@@ -746,6 +773,7 @@ function bind(){
   on('start',  ()=>guard(()=>post('start')));
   on('revealSong', ()=>guard(()=>post('revealSong')));
   on('nextReveal', ()=>guard(()=>post('nextReveal')));
+  on('startLottery',()=>guard(()=>post('startLottery')));
   on('confirm',()=>guard(()=>post('confirm')));
   on('submit', ()=>guard(submitSong));
   on('finish', ()=>{ if(window.confirm('この巡の指名を行わず、以後の指名から外れます。終了しますか？')) guard(()=>post('finish')); });
