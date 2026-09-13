@@ -10,7 +10,7 @@ const path = require('path');
 const os = require('os');
 const crypto = require('crypto');
 
-const PORT = Number(process.env.PORT) || 3000;
+const PORT = Number(process.env.PORT) || 10000;
 const MAX_PLAYERS = 12;
 const ROOM_TTL_MS = 6 * 60 * 60 * 1000;   // 6時間触られていない部屋は破棄
 
@@ -358,10 +358,11 @@ setInterval(() => {
   }
 }, 10 * 60 * 1000);
 
-server.listen(PORT, () => {
+server.listen(PORT, '0.0.0.0', () => {
   const addrs = lanUrls();
   console.log('東方原曲ドラフト会議 を起動しました');
-  console.log(`  ホスト用　　 http://localhost:${PORT}`);
+  console.log(`  サーバ　　　 0.0.0.0:${PORT}`);
+  console.log(`  ローカル確認 http://localhost:${PORT}`);
   if (addrs.length){
     console.log('  参加者用（同じWi-Fiから開いてください）');
     addrs.forEach(a => console.log(`　　　　　　　 ${a}`));

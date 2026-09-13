@@ -130,7 +130,8 @@ const MAX = 12;
 const S = {
   view:'home', role:null, code:null, tk:null, me:null,
   room:null, err:'', busy:false, blind:false, spinning:null,
-  mySong:'', online:false, urls:[], urlIdx:0, linkCode:null
+  mySong:'', draftSong:'', joinCode:'', joinName:'',
+  online:false, urls:[], urlIdx:0, linkCode:null
 };
 const $  = id => document.getElementById(id);
 const esc = s => String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -405,7 +406,7 @@ function connect(){
     S.room = room;
     S.online = true;
     if(room.phase === 'input' && prevPhase !== `${room.round}:${room.wave}:input`){
-      S.mySong = ''; S.err = '';
+      S.mySong = ''; S.draftSong = ''; S.err = '';
     }
     if(S.role === 'player') S.me = room.you;
     S.view = room.status==='done' ? 'done'
@@ -611,7 +612,7 @@ function viewJoin(){
     <div class="code-stage"><div class="cap">参加番号</div><div class="code">${esc(S.linkCode)}</div></div>
     <div class="panel">
       <h2>ペンネームを決めてください</h2>
-      <input type="text" id="jname" maxlength="12" autocomplete="off" autocapitalize="off" autocorrect="off" placeholder="読み上げられる名前" enterkeyhint="go">
+      <input type="text" id="jname" maxlength="12" value="${esc(S.joinName)}" autocomplete="off" autocapitalize="off" autocorrect="off" placeholder="読み上げられる名前" enterkeyhint="go">
       <button class="btn" id="join" ${S.busy?'disabled':''}>${S.busy?'参加しています':'この名前で参加する'}</button>
       <button class="btn ghost" id="manual">番号を自分で入力する</button>
       ${errBox()}
@@ -663,7 +664,7 @@ function viewPlayerGame(){
     const taken = r.acquired.map(a=>a.song);
     return head + `<div class="panel">
       <h2>指名する楽曲を記入</h2>
-      <input type="text" id="song" maxlength="60" autocomplete="off" autocapitalize="off" autocorrect="off" enterkeyhint="send" placeholder="例：ネクロファンタジア" style="font-weight:500">
+      <input type="text" id="song" maxlength="60" value="${esc(S.draftSong)}" autocomplete="off" autocapitalize="off" autocorrect="off" enterkeyhint="send" placeholder="例：ネクロファンタジア" style="font-weight:500">
       <button class="btn" id="submit" ${S.busy?'disabled':''}>${S.busy?'送信しています':'この曲を指名する'}</button>
       ${taken.length?`<p class="note">指名済みで選べない曲：${taken.map(esc).join(' ／ ')}</p>`:''}
       ${errBox()}
@@ -726,12 +727,19 @@ function bind(){
   const song=$('song');
   if(song){ song.focus(); song.onkeydown=e=>{ if(e.key==='Enter') guard(submitSong); }; }
   const jc=$('jcode');
-  if(jc) jc.oninput=()=>{ jc.value=jc.value.replace(/\D/g,'').slice(0,6); };
+  if(jc) jc.oninput=()=>{
+    jc.value=jc.value.replace(/\D/g,'').slice(0,6);
+    S.joinCode=jc.value;
+  };
+  const jn=$('jname');
+  if(jn) jn.oninput=()=>{ S.joinName=jn.value.slice(0,12); };
 }
 
 async function guard(fn){
   if(S.busy) return;
-  S.busy=true; S.err=''; render();
+  // fn が DOM の入力値を読む前に再描画すると入力値が消えるため、
+  // 処理開始直後は render() せず、完了後だけ再描画する。
+  S.busy=true; S.err='';
   try{ await fn(); }
   catch(e){ console.error(e); S.err = e.message || 'うまくいきませんでした。'; }
   finally{ S.busy=false; render(); }
@@ -747,22 +755,28 @@ async function createRoom(){
 }
 
 async function joinRoom(){
-  const code = S.linkCode || ((($('jcode')||{}).value)||'').trim();
+  const code = (S.linkCode || ((($('jcode')||{}).value)||'').trim()).trim();
   const name = ((($('jname')||{}).value)||'').trim();
+  // API 呼び出し前に状態へ退避し、エラー時の再描画でも値を維持する。
+  S.joinCode = code;
+  S.joinName = name;
   if(code.length!==6){ S.err='六桁の参加番号を入力してください。'; return; }
   if(!name){ S.err='ペンネームを入力してください。'; return; }
   const data = await request('join', {code, name});
   S.code=data.code; S.tk=data.token; S.me=data.id; S.role='player'; S.view='playerLobby';
   S.linkCode=null;
+  S.joinCode=''; S.joinName='';
   try{ history.replaceState(null,'',location.pathname); }catch(e){}
   save(); connect();
 }
 
 async function submitSong(){
   const raw = ((($('song')||{}).value)||'').trim();
+  S.draftSong = raw;
   if(!raw){ S.err='曲名を入力してください。'; return; }
   const data = await post('submit', {song:raw});
   S.mySong = data.song;
+  S.draftSong = '';
 }
 
 function drawLottery(key){
