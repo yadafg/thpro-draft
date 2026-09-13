@@ -1,0 +1,854 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>東方原曲ドラフト会議</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --sumi:#0d0b16; --fuji:#1b1630; --fuji-2:#251e3f;
+  --kin:#c9a44c; --kin-dim:#8a7031; --hi:#c2405a; --ao:#5b86c4;
+  --kinari:#efe9dd; --muted:#a49cb8;
+  --font:"Noto Sans JP","Hiragino Sans","Yu Gothic",system-ui,sans-serif;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  background:var(--sumi);color:var(--kinari);font-family:var(--font);
+  font-size:16px;line-height:1.7;-webkit-text-size-adjust:100%;
+  padding:0 16px calc(72px + env(safe-area-inset-bottom));max-width:680px;margin:0 auto;
+}
+h1,h2,h3{font-weight:700;letter-spacing:.08em;margin:0}
+button{font-family:var(--font);font-size:1rem;cursor:pointer}
+
+.masthead{padding:26px 0 16px;text-align:center;border-bottom:1px solid rgba(201,164,76,.35)}
+.masthead h1{font-size:1.4rem;letter-spacing:.14em}
+.masthead p{margin:6px 0 0;color:var(--muted);font-size:.76rem;letter-spacing:.18em}
+
+.panel{background:var(--fuji);border:1px solid rgba(201,164,76,.22);padding:18px;margin:18px 0}
+.panel.tight{padding:14px}
+.panel h2{font-size:1.05rem;margin-bottom:10px}
+
+.roundbar{display:flex;align-items:baseline;gap:12px;padding:14px 0 10px;
+  border-bottom:1px solid rgba(201,164,76,.3);margin-bottom:4px}
+.roundbar .r{font-size:1.35rem;font-weight:700;letter-spacing:.1em;color:var(--kin)}
+.roundbar .w{font-size:.78rem;color:var(--muted)}
+
+label{display:block;font-size:.85rem;color:var(--muted);margin:14px 0 6px}
+input,select{width:100%;padding:12px 14px;background:#120f22;color:var(--kinari);
+  border:1px solid rgba(239,233,221,.22);border-radius:2px;font-size:1.05rem;font-family:var(--font)}
+input:focus,select:focus,button:focus-visible{outline:2px solid var(--kin);outline-offset:2px}
+#jcode{letter-spacing:.5em;text-align:center;font-size:1.5rem;font-weight:500}
+
+.btn{display:block;width:100%;padding:14px;margin-top:14px;background:var(--kin);
+  color:#1a1408;border:none;border-radius:2px;font-weight:700;letter-spacing:.1em}
+.btn:disabled{background:#3a3450;color:#7d7590;cursor:not-allowed}
+.btn.ghost{background:transparent;color:var(--kinari);border:1px solid rgba(239,233,221,.3)}
+.btn.small{width:auto;display:inline-block;padding:8px 14px;margin:0 8px 0 0;font-size:.85rem}
+
+.code-stage{text-align:center;padding:22px 0 10px}
+.code-stage .cap{font-size:.76rem;color:var(--muted);letter-spacing:.2em}
+.code-stage .code{font-size:2.9rem;font-weight:700;letter-spacing:.22em;color:var(--kin);margin:6px 0 0;text-indent:.22em}
+.code-stage .url{margin-top:10px;font-size:.85rem;color:var(--muted);word-break:break-all}
+.qr{line-height:0}
+.qr svg{width:168px;height:168px;border:6px solid #fff;background:#fff}
+.url{margin-top:10px;font-size:.84rem;color:var(--muted);word-break:break-all}
+.linkrow{margin-top:10px;display:flex;flex-wrap:wrap;gap:8px;justify-content:center}
+.linkrow .btn.small{margin:0}
+
+.roster{list-style:none;margin:8px 0 0;padding:0}
+.roster li{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid rgba(239,233,221,.1)}
+.roster li:last-child{border-bottom:none}
+.num{color:var(--kin-dim);min-width:1.6em;text-align:right;font-size:.9rem;font-weight:500}
+.nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.song-cell{flex:2;text-align:right;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.song-cell.blind{color:transparent;text-shadow:0 0 10px rgba(239,233,221,.6)}
+.tag{font-size:.72rem;padding:3px 8px;border:1px solid currentColor;border-radius:99px;white-space:nowrap}
+.tag.wait{color:var(--muted)} .tag.done{color:var(--kin)} .tag.me{color:var(--ao)}
+
+.pick{border-left:3px solid var(--kin);padding:12px 14px;margin:10px 0;background:var(--fuji-2)}
+.pick .who{font-size:.78rem;color:var(--muted)}
+.pick .song{font-size:1.1rem;font-weight:500;line-height:1.45;margin-top:2px}
+.pick.contest{border-left-color:var(--hi)}
+.pick.contest .song{color:#ffd9e0}
+.pick .cands{margin-top:8px;font-size:.85rem;color:var(--muted)}
+.pick .winner{margin-top:8px;color:var(--kin);font-size:.95rem;font-weight:500}
+.pick.lost{opacity:.5;border-left-color:#555}
+
+.lottery{margin-top:10px;padding:12px;background:#140f22;border:1px dashed rgba(194,64,90,.5);text-align:center}
+.lottery .spin{font-size:1.35rem;font-weight:700;letter-spacing:.06em;color:var(--kin);min-height:2.1rem}
+.cand-btn{display:block;width:100%;margin-top:8px;padding:10px;background:transparent;
+  color:var(--kinari);border:1px solid rgba(239,233,221,.3);border-radius:2px}
+.cand-btn:hover{border-color:var(--kin)}
+
+.note{font-size:.82rem;color:var(--muted);margin-top:10px}
+.err{color:#ff9db0;font-size:.88rem;margin-top:10px;white-space:pre-wrap}
+.center{text-align:center}
+
+.pulse{display:inline-block;width:8px;height:8px;border-radius:99px;background:var(--kin);margin-right:8px;animation:p 1.6s ease-in-out infinite}
+@keyframes p{0%,100%{opacity:.25}50%{opacity:1}}
+@media (prefers-reduced-motion:reduce){.pulse{animation:none;opacity:.7}}
+
+.result-card{border:1px solid rgba(201,164,76,.25);padding:14px;margin:12px 0;background:var(--fuji)}
+.result-card h3{font-size:1rem;color:var(--kin);margin-bottom:6px}
+.result-card ol{margin:0;padding-left:1.4em}
+.result-card li{font-size:1rem;font-weight:500;padding:3px 0}
+.result-card li::marker{color:var(--kin-dim);font-size:.8rem;font-weight:400}
+
+.wide-only{display:inline}
+@media (max-width:430px){
+  /* 提出一覧は名前と曲名を2段にする */
+  .roster li.pick-row{flex-wrap:wrap;row-gap:2px}
+  .roster li.pick-row .nm{flex:1 1 auto}
+  .roster li.pick-row .song-cell{flex:1 1 100%;text-align:left;order:3;
+    font-size:1.02rem;color:var(--kinari);padding-left:2px;white-space:normal}
+  .qr svg{width:min(168px,54vw);height:min(168px,54vw)}
+  .code-stage .code{font-size:2.45rem}
+  .masthead h1{font-size:1.2rem}
+  .wide-only{display:none}
+}
+.link{position:fixed;left:0;right:0;bottom:0;text-align:center;font-size:.72rem;
+  padding:6px calc(6px + env(safe-area-inset-right)) calc(6px + env(safe-area-inset-bottom)) calc(6px + env(safe-area-inset-left));background:rgba(13,11,22,.92);color:#6d667f}
+.link.off{color:#ff9db0}
+</style>
+</head>
+<body>
+
+<div class="masthead">
+  <h1>東方原曲ドラフト会議</h1>
+  <p>最大十二名・重複指名は抽選</p>
+</div>
+
+<main id="app"><div class="panel"><p class="note"><span class="pulse"></span>読み込んでいます</p></div></main>
+<div class="link" id="link"></div>
+
+<script>
+const MAX = 12;
+const S = {
+  view:'home', role:null, code:null, tk:null, me:null,
+  room:null, err:'', busy:false, blind:false, spinning:null,
+  mySong:'', online:false, urls:[], urlIdx:0, linkCode:null
+};
+const $  = id => document.getElementById(id);
+const esc = s => String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const nameOf = id => { const p=((S.room&&S.room.players)||[]).find(p=>p.id===id); return p?p.name:'？'; };
+const capOf = () => (S.room && S.room.cap) || MAX;
+
+// 参加者に渡すURL。ホストがlocalhostで開いていると他の端末からは届かないので、
+// その場合だけサーバが教えてくれたLAN内のアドレスを使う
+const isLocal = () => ['localhost','127.0.0.1','[::1]'].includes(location.hostname);
+function joinBase(){
+  if(!isLocal()) return location.origin;
+  return S.urls.length ? S.urls[S.urlIdx % S.urls.length] : location.origin;
+}
+const joinUrl = () => `${joinBase()}/?r=${S.code}`;
+
+/* QRコード生成（バイトモード・誤り訂正レベルL・型番1〜5）
+   1ブロックで収まる範囲に限定しているので、インターリーブは不要 */
+function qrMatrix(text){
+  const CAP = {1:19, 2:34, 3:55, 4:80, 5:108};   // データ符号語数
+  const ECC = {1:7,  2:10, 3:15, 4:20, 5:26};    // 誤り訂正符号語数
+  const ALIGN = {1:null, 2:18, 3:22, 4:26, 5:30};
+
+  const data = [];
+  for (const ch of unescape(encodeURIComponent(text))) data.push(ch.charCodeAt(0));
+
+  let ver = 0;
+  for (let v = 1; v <= 5; v++) if (data.length + 2 <= CAP[v]) { ver = v; break; }
+  if (!ver) throw new Error('文字数が多すぎます');
+
+  /* --- ビット列を組み立てる --- */
+  const bits = [];
+  const push = (val, len) => { for (let i = len - 1; i >= 0; i--) bits.push((val >> i) & 1); };
+  push(0b0100, 4);            // バイトモード
+  push(data.length, 8);
+  for (const b of data) push(b, 8);
+  const capBits = CAP[ver] * 8;
+  for (let i = 0; i < 4 && bits.length < capBits; i++) bits.push(0);
+  while (bits.length % 8) bits.push(0);
+  const words = [];
+  for (let i = 0; i < bits.length; i += 8){
+    let b = 0; for (let j = 0; j < 8; j++) b = (b << 1) | bits[i + j];
+    words.push(b);
+  }
+  const PAD = [0xEC, 0x11];
+  for (let i = 0; words.length < CAP[ver]; i++) words.push(PAD[i % 2]);
+
+  /* --- ガロア体と誤り訂正 --- */
+  const EXP = new Array(512), LOG = new Array(256);
+  for (let i = 0, x = 1; i < 255; i++){
+    EXP[i] = x; LOG[x] = i;
+    x <<= 1; if (x & 0x100) x ^= 0x11D;
+  }
+  for (let i = 255; i < 512; i++) EXP[i] = EXP[i - 255];
+  const mul = (a, b) => (a === 0 || b === 0) ? 0 : EXP[LOG[a] + LOG[b]];
+
+  const n = ECC[ver];
+  let gen = [1];
+  for (let i = 0; i < n; i++){
+    const next = new Array(gen.length + 1).fill(0);
+    for (let j = 0; j < gen.length; j++){
+      next[j] ^= gen[j];
+      next[j + 1] ^= mul(gen[j], EXP[i]);
+    }
+    gen = next;
+  }
+  const rem = new Array(n).fill(0);
+  for (const w of words){
+    const factor = w ^ rem[0];
+    rem.shift(); rem.push(0);
+    if (factor) for (let j = 0; j < n; j++) rem[j] ^= mul(gen[j + 1], factor);
+  }
+  const all = words.concat(rem);
+
+  /* --- 土台の配置 --- */
+  const size = 17 + 4 * ver;
+  const mat  = Array.from({length: size}, () => new Array(size).fill(null));
+  const res  = Array.from({length: size}, () => new Array(size).fill(false));
+  const set = (r, c, v) => { mat[r][c] = v; res[r][c] = true; };
+
+  const finder = (r0, c0) => {
+    for (let r = -1; r <= 7; r++) for (let c = -1; c <= 7; c++){
+      const R = r0 + r, C = c0 + c;
+      if (R < 0 || C < 0 || R >= size || C >= size) continue;
+      const on = (r >= 0 && r <= 6 && (c === 0 || c === 6)) ||
+                 (c >= 0 && c <= 6 && (r === 0 || r === 6)) ||
+                 (r >= 2 && r <= 4 && c >= 2 && c <= 4);
+      set(R, C, on ? 1 : 0);
+    }
+  };
+  finder(0, 0); finder(0, size - 7); finder(size - 7, 0);
+
+  for (let i = 8; i < size - 8; i++){
+    set(6, i, i % 2 === 0 ? 1 : 0);
+    set(i, 6, i % 2 === 0 ? 1 : 0);
+  }
+
+  if (ALIGN[ver]){
+    const a = ALIGN[ver];
+    for (let r = -2; r <= 2; r++) for (let c = -2; c <= 2; c++){
+      const on = Math.max(Math.abs(r), Math.abs(c)) !== 1;
+      set(a + r, a + c, on ? 1 : 0);
+    }
+  }
+
+  set(size - 8, 8, 1);   // 常に黒い点
+
+  // 形式情報の領域を確保する
+  for (let i = 0; i < 9; i++){
+    if (mat[8][i] === null) res[8][i] = true;
+    if (mat[i][8] === null) res[i][8] = true;
+  }
+  for (let i = 0; i < 8; i++){
+    res[8][size - 1 - i] = true;
+    res[size - 1 - i][8] = true;
+  }
+
+  /* --- データの配置 --- */
+  const bitAt = i => (all[i >> 3] >> (7 - (i & 7))) & 1;
+  const total = all.length * 8;
+  const cells = [];
+  let idx = 0, up = true;
+  for (let col = size - 1; col > 0; col -= 2){
+    if (col === 6) col--;
+    for (let k = 0; k < size; k++){
+      const row = up ? size - 1 - k : k;
+      for (const c of [col, col - 1]){
+        if (res[row][c]) continue;
+        mat[row][c] = idx < total ? bitAt(idx) : 0;
+        cells.push([row, c]);
+        idx++;
+      }
+    }
+    up = !up;
+  }
+
+  /* --- マスクを8種類試して一番よいものを選ぶ --- */
+  const maskFn = [
+    (r,c)=>(r+c)%2===0,
+    (r,c)=>r%2===0,
+    (r,c)=>c%3===0,
+    (r,c)=>(r+c)%3===0,
+    (r,c)=>(Math.floor(r/2)+Math.floor(c/3))%2===0,
+    (r,c)=>((r*c)%2+(r*c)%3)===0,
+    (r,c)=>(((r*c)%2+(r*c)%3)%2)===0,
+    (r,c)=>(((r+c)%2+(r*c)%3)%2)===0
+  ];
+
+  const formatBits = (mask) => {
+    // レベルL は 01
+    let v = (0b01 << 3) | mask;
+    let d = v << 10;
+    for (let i = 4; i >= 0; i--) if (d & (1 << (i + 10))) d ^= 0b10100110111 << i;
+    return ((v << 10) | d) ^ 0b101010000010010;
+  };
+
+  const buildWith = (mask) => {
+    const m = mat.map(row => row.slice());
+    for (const [r, c] of cells) if (maskFn[mask](r, c)) m[r][c] ^= 1;
+    const f = formatBits(mask);
+    for (let i = 0; i < 15; i++){
+      const bit = (f >> i) & 1;
+      // 縦：左上の列（1つめの前半）と左下の列（2つめの後半）
+      if (i < 6)      m[i][8] = bit;
+      else if (i < 8) m[i + 1][8] = bit;
+      else            m[size - 15 + i][8] = bit;
+      // 横：右上の行（2つめの前半）と左上の行（1つめの後半）
+      if (i < 8)        m[8][size - 1 - i] = bit;
+      else if (i === 8) m[8][7] = bit;
+      else              m[8][14 - i] = bit;
+    }
+    return m;
+  };
+
+  const penalty = (m) => {
+    let p = 0;
+    // 規則1：同色の連続
+    for (let i = 0; i < size; i++){
+      for (const line of [m[i], m.map(r => r[i])]){
+        let run = 1;
+        for (let j = 1; j < size; j++){
+          if (line[j] === line[j - 1]) run++;
+          else { if (run >= 5) p += 3 + (run - 5); run = 1; }
+        }
+        if (run >= 5) p += 3 + (run - 5);
+      }
+    }
+    // 規則2：2×2の同色
+    for (let r = 0; r < size - 1; r++) for (let c = 0; c < size - 1; c++){
+      const v = m[r][c];
+      if (v === m[r][c+1] && v === m[r+1][c] && v === m[r+1][c+1]) p += 3;
+    }
+    // 規則3：位置検出模様に似た並び
+    const pat1 = [1,0,1,1,1,0,1,0,0,0,0], pat2 = [0,0,0,0,1,0,1,1,1,0,1];
+    const has = (line, pat) => {
+      let n = 0;
+      for (let i = 0; i + pat.length <= size; i++){
+        let ok = true;
+        for (let j = 0; j < pat.length; j++) if (line[i + j] !== pat[j]) { ok = false; break; }
+        if (ok) n++;
+      }
+      return n;
+    };
+    for (let i = 0; i < size; i++){
+      const row = m[i], col = m.map(r => r[i]);
+      p += 40 * (has(row, pat1) + has(row, pat2) + has(col, pat1) + has(col, pat2));
+    }
+    // 規則4：黒の割合
+    let dark = 0;
+    for (let r = 0; r < size; r++) for (let c = 0; c < size; c++) dark += m[r][c];
+    const ratio = dark * 100 / (size * size);
+    p += 10 * Math.floor(Math.abs(ratio - 50) / 5);
+    return p;
+  };
+
+  let best = null, bestP = Infinity, bestMask = 0;
+  for (let mask = 0; mask < 8; mask++){
+    const m = buildWith(mask);
+    const p = penalty(m);
+    if (p < bestP){ bestP = p; best = m; bestMask = mask; }
+  }
+  return { matrix: best, size, version: ver, mask: bestMask, buildWith };
+}
+
+/* 白縁つきのSVGにする */
+function qrSvg(text, px){
+  const { matrix, size } = qrMatrix(text);
+  const quiet = 4, total = size + quiet * 2;
+  let d = '';
+  for (let r = 0; r < size; r++) for (let c = 0; c < size; c++){
+    if (matrix[r][c]) d += `M${c + quiet} ${r + quiet}h1v1h-1z`;
+  }
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${total} ${total}" width="${px}" height="${px}" shape-rendering="crispEdges">`
+       + `<rect width="${total}" height="${total}" fill="#fff"/><path d="${d}" fill="#000"/></svg>`;
+}
+
+/* ---------- 通信 ---------- */
+const NO_SERVER = 'サーバにつながりません。パソコン側で node server.js を起動し、表示されたアドレスから開いてください。';
+
+async function request(action, body){
+  if(location.protocol === 'file:') throw new Error(NO_SERVER);
+  let res;
+  try{
+    res = await fetch('/api/'+action, {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(body||{})
+    });
+  }catch(e){ throw new Error(NO_SERVER); }
+
+  const text = await res.text();
+  let data;
+  try{ data = JSON.parse(text); }
+  catch(e){ throw new Error(NO_SERVER); }   // HTMLなどが返ってきた場合
+
+  if(!data.ok) throw new Error(data.error || 'うまくいきませんでした');
+  return data;
+}
+
+// 部屋の操作。番号と合言葉を自動で添える
+const post = (action, body) => request(action, Object.assign({code:S.code, token:S.tk}, body||{}));
+
+let es = null, esFails = 0;
+function connect(){
+  if(es) es.close();
+  esFails = 0;
+  es = new EventSource(`/api/stream?code=${encodeURIComponent(S.code)}&token=${encodeURIComponent(S.tk)}`);
+  keepAwake();
+  es.onmessage = ev => {
+    esFails = 0;
+    const room = JSON.parse(ev.data);
+    const prevPhase = S.room ? `${S.room.round}:${S.room.wave}:${S.room.phase}` : '';
+    S.room = room;
+    S.online = true;
+    if(room.phase === 'input' && prevPhase !== `${room.round}:${room.wave}:input`){
+      S.mySong = ''; S.err = '';
+    }
+    if(S.role === 'player') S.me = room.you;
+    S.view = room.status==='done' ? 'done'
+           : room.status==='playing' ? (S.role==='host'?'hostGame':'playerGame')
+           : (S.role==='host'?'hostLobby':'playerLobby');
+    render();
+  };
+  es.onerror = async () => {
+    S.online = false; renderLink();
+    if(++esFails < 3) return;      // 一時的な切断は自動再接続にまかせる
+    esFails = 0;
+    try{
+      const r = await fetch(`/api/stream?code=${encodeURIComponent(S.code)}&token=${encodeURIComponent(S.tk)}`);
+      if(r.status === 404 || r.status === 403){
+        if(es) es.close();
+        clearSave();
+        S.code=null; S.tk=null; S.role=null; S.room=null; S.me=null;
+        S.err = '部屋が終了しています。もう一度建て直してください。';
+        S.view = 'home'; render();
+      } else if(r.body && r.body.cancel){ r.body.cancel(); }
+    }catch(e){}
+  };
+}
+
+// 会議の最中に画面が暗くならないようにする（対応していない環境では何も起きない）
+let wake = null;
+async function keepAwake(){
+  try{
+    if(!('wakeLock' in navigator) || wake || document.visibilityState !== 'visible') return;
+    wake = await navigator.wakeLock.request('screen');
+    wake.addEventListener('release', () => { wake = null; });
+  }catch(e){ /* 対応外・権限なしは無視 */ }
+}
+
+// スマートフォンで画面を消したりアプリを切り替えたりすると接続が切れるので、
+// 戻ってきたとき・回線が復帰したときにつなぎ直す
+function reconnectIfNeeded(){
+  if(!S.code || !S.tk) return;
+  keepAwake();
+  if(!es || es.readyState === 2) connect();   // 2 = CLOSED
+}
+document.addEventListener('visibilitychange', () => {
+  if(document.visibilityState === 'visible') reconnectIfNeeded();
+});
+window.addEventListener('online', reconnectIfNeeded);
+window.addEventListener('pageshow', reconnectIfNeeded);
+
+// 無料のホスティングは一定時間アクセスがないと休眠するので、会議中だけ軽く呼びかけておく
+setInterval(() => {
+  if(S.code && document.visibilityState === 'visible'){
+    fetch('/api/health', {cache:'no-store'}).catch(()=>{});
+  }
+}, 4 * 60 * 1000);
+
+function save(){
+  try{ localStorage.setItem('thd:session', JSON.stringify({code:S.code, tk:S.tk, role:S.role})); }catch(e){}
+}
+function clearSave(){ try{ localStorage.removeItem('thd:session'); }catch(e){} }
+
+/* ---------- 画面 ---------- */
+function render(){
+  const map = { home:viewHome, hostSetup:viewHostSetup, hostLobby:viewHostLobby, hostGame:viewHostGame,
+                join:viewJoin, playerLobby:viewPlayerLobby, playerGame:viewPlayerGame, done:viewDone,
+                offline:viewOffline };
+  let html;
+  try{ html = (map[S.view]||viewHome)(); }
+  catch(e){ console.error(e); html = `<div class="panel"><h2>表示できませんでした</h2>
+    <p class="err">${esc(e.message)}</p><button class="btn ghost" id="reset">最初からやり直す</button></div>`; }
+  $('app').innerHTML = html;
+  bind();
+  renderLink();
+}
+function renderLink(){
+  const l = $('link');
+  if(!S.code){ l.textContent = ''; l.className='link'; return; }
+  l.textContent = S.online ? `接続中　部屋 ${S.code}` : '接続が切れました。自動で再接続します';
+  l.className = 'link' + (S.online ? '' : ' off');
+}
+const errBox = () => S.err ? `<p class="err">${esc(S.err)}</p>` : '';
+
+function viewHome(){
+  return `
+  <div class="panel">
+    <h2>会議を開く</h2>
+    <p class="note">六桁の参加番号が発行されます。この端末がホスト席になります。</p>
+    <button class="btn" data-go="hostSetup">ホストとして開く</button>
+  </div>
+  <div class="panel">
+    <h2>会議に参加する</h2>
+    <p class="note">ホストから参加番号を聞いてから進んでください。</p>
+    <button class="btn ghost" data-go="join">番号を入力して参加</button>
+  </div>
+  ${errBox()}`;
+}
+
+function viewHostSetup(){
+  return `
+  <div class="panel">
+    <h2>会議の設定</h2>
+    <label for="cap">参加人数（ホストを除く）</label>
+    <input type="number" id="cap" min="2" max="12" value="12" inputmode="numeric">
+    <p class="note">この人数が揃うと締め切ります。少ない人数で始めることもできます。</p>
+    <label for="rounds">何巡まで指名しますか</label>
+    <input type="number" id="rounds" min="1" max="20" value="5" inputmode="numeric">
+    <label for="mode">重複したときの決め方</label>
+    <select id="mode">
+      <option value="auto">この画面で抽選する</option>
+      <option value="manual">じゃんけんなどで決めて当選者を選ぶ</option>
+    </select>
+    <p class="note">どちらを選んでも、抽選のたびに切り替えられます。</p>
+    <button class="btn" id="create" ${S.busy?'disabled':''}>${S.busy?'部屋を建てています':'部屋を建てる'}</button>
+    <button class="btn ghost" data-go="home">戻る</button>
+    ${errBox()}
+  </div>`;
+}
+
+function viewHostLobby(){
+  const ps = S.room.players, n = ps.length, cap = capOf(), full = n>=cap;
+  return `
+  <div class="code-stage">
+    <div class="cap">参加番号</div>
+    <div class="code">${esc(S.code)}</div>
+  </div>
+  <div class="panel tight center">
+    <div class="qr">${qrSafe(joinUrl())}</div>
+    <div class="url">${esc(joinUrl())}</div>
+    <div class="linkrow">
+      <button class="btn ghost small" id="copylink">リンクをコピー</button>
+      ${navigator.share?'<button class="btn ghost small" id="sharelink">リンクを送る</button>':''}
+      ${(isLocal() && S.urls.length>1)?'<button class="btn ghost small" id="nexturl">別のアドレス</button>':''}
+    </div>
+    <p class="note">このQRを読むか、リンクを開くと番号なしで参加できます。${isLocal()?'参加者は同じWi-Fiにつないでおいてください。':''}</p>
+  </div>
+  <div class="panel tight">
+    <h2>参加者 ${n} / ${cap}</h2>
+    ${n===0 ? `<p class="note"><span class="pulse"></span>まだ誰も入っていません。番号を伝えてください。</p>`
+      : `<ul class="roster">${ps.map((p,i)=>`<li><span class="num">${i+1}</span><span class="nm">${esc(p.name)}</span></li>`).join('')}</ul>`}
+  </div>
+  <button class="btn" id="start" ${n<2||S.busy?'disabled':''}>${full?'全員そろいました。指名を開始する':'指名を開始する'}</button>
+  ${n<2 ? '<p class="note center">2名以上で開始できます</p>'
+        : full ? '<p class="note center">定員に達したため、これ以上は参加できません</p>'
+        : `<p class="note center">あと${cap-n}名で定員です。待たずに開始することもできます。</p>`}
+  ${errBox()}`;
+}
+
+function viewHostGame(){
+  const r = S.room;
+  const head = `<div class="roundbar"><span class="r">第${r.round}巡 指名</span>
+    <span class="w">${r.wave>1?`外れ${r.wave-1}回目の再指名`:`全${r.rounds}巡`}</span></div>`;
+
+  if(r.phase==='input'){
+    const picks = r.picks || [];
+    const got = picks.filter(x=>x.song).length;
+    return head + `
+    <div class="panel tight">
+      <h2>提出 ${got} / ${picks.length}</h2>
+      <ul class="roster">
+        ${picks.map(x=> x.song
+          ? `<li class="pick-row"><span class="nm">${esc(nameOf(x.id))}</span>
+               <span class="tag done">提出</span>
+               <span class="song-cell ${S.blind?'blind':''}">${esc(x.song)}</span></li>`
+          : `<li class="pick-row"><span class="nm">${esc(nameOf(x.id))}</span><span class="tag wait">記入中</span></li>`).join('')}
+      </ul>
+      <p class="note"><button class="btn ghost small" id="blind">${S.blind?'曲名を表示':'曲名を伏せる'}</button><span class="wide-only">画面を共有するときに使います</span></p>
+    </div>
+    <button class="btn" id="reveal" ${got===0||S.busy?'disabled':''}>読み上げに進む</button>
+    ${got<picks.length?'<p class="note center">未提出者がいます。進めると次の再指名に持ち越されます。</p>':''}
+    ${errBox()}`;
+  }
+
+  if(r.phase==='reveal'){
+    const rest = r.contests.filter(c=>!c.winner).length;
+    return head + `
+    ${r.solos.length?`<div class="panel tight"><h2>単独指名</h2>
+      ${r.solos.map(g=>`<div class="pick"><div class="who">${esc(nameOf(g.ids[0]))}</div><div class="song">${esc(g.song)}</div></div>`).join('')}</div>`:''}
+    ${r.contests.length?`<div class="panel tight"><h2>重複指名</h2>
+      ${r.contests.map((c,i)=>contestHost(c,i)).join('')}</div>`:''}
+    ${(!r.solos.length&&!r.contests.length)?'<div class="panel"><p class="note">提出がありませんでした。</p></div>':''}
+    <button class="btn" id="confirm" ${rest||S.busy?'disabled':''}>この結果で確定する</button>
+    ${rest?`<p class="note center">抽選が残っています（${rest}件）</p>`:''}
+    ${errBox()}`;
+  }
+  return head;
+}
+
+function contestHost(c,i){
+  const spinning = S.spinning===c.key;
+  return `<div class="pick contest">
+    <div class="song">${esc(c.song)}</div>
+    <div class="cands">${c.ids.map(id=>esc(nameOf(id))).join(' ／ ')}</div>
+    ${c.winner ? `<div class="winner">交渉権獲得　${esc(nameOf(c.winner))}</div>`
+    : `<div class="lottery">
+        <div class="spin" id="spin-${i}">${spinning?'&nbsp;':'抽選箱'}</div>
+        <button class="cand-btn" data-draw="${esc(c.key)}" ${spinning?'disabled':''}>この画面で抽選する</button>
+        ${c.ids.map(id=>`<button class="cand-btn" data-win="${esc(c.key)}" data-id="${esc(id)}" ${spinning?'disabled':''}>${esc(nameOf(id))}が当選</button>`).join('')}
+      </div>`}
+  </div>`;
+}
+
+function viewJoin(){
+  if(S.linkCode){
+    return `
+    <div class="code-stage"><div class="cap">参加番号</div><div class="code">${esc(S.linkCode)}</div></div>
+    <div class="panel">
+      <h2>ペンネームを決めてください</h2>
+      <input type="text" id="jname" maxlength="12" autocomplete="off" autocapitalize="off" autocorrect="off" placeholder="読み上げられる名前" enterkeyhint="go">
+      <button class="btn" id="join" ${S.busy?'disabled':''}>${S.busy?'参加しています':'この名前で参加する'}</button>
+      <button class="btn ghost" id="manual">番号を自分で入力する</button>
+      ${errBox()}
+    </div>`;
+  }
+  return `
+  <div class="panel">
+    <h2>会議に参加</h2>
+    <label for="jcode">参加番号（六桁）</label>
+    <input type="text" id="jcode" inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="off" placeholder="000000">
+    <label for="jname">ペンネーム</label>
+    <input type="text" id="jname" maxlength="12" autocomplete="off" autocapitalize="off" autocorrect="off" placeholder="読み上げられる名前">
+    <button class="btn" id="join" ${S.busy?'disabled':''}>${S.busy?'参加しています':'参加する'}</button>
+    <button class="btn ghost" data-go="home">戻る</button>
+    ${errBox()}
+  </div>`;
+}
+
+function viewPlayerLobby(){
+  const ps = S.room.players;
+  return `
+  <div class="code-stage"><div class="cap">参加番号</div><div class="code">${esc(S.code)}</div></div>
+  <div class="panel tight">
+    <h2>開始を待っています（${ps.length} / ${capOf()}名）</h2>
+    <p class="note"><span class="pulse"></span>ホストが指名を開始すると、この画面が切り替わります。</p>
+    ${ps.length?`<ul class="roster">${ps.map((p,i)=>`<li><span class="num">${i+1}</span><span class="nm">${esc(p.name)}</span>${p.id===S.me?'<span class="tag me">あなた</span>':''}</li>`).join('')}</ul>`:''}
+  </div>
+  ${errBox()}`;
+}
+
+function viewPlayerGame(){
+  const r = S.room, me = S.me;
+  const head = `<div class="roundbar"><span class="r">第${r.round}巡 指名</span>
+    <span class="w">${r.wave>1?'外れ再指名':`全${r.rounds}巡`}</span></div>`;
+  const mine = r.acquired.filter(a=>a.id===me);
+  const myList = mine.length ? `<div class="panel tight"><h2>あなたの獲得楽曲</h2>
+    <ol style="margin:0;padding-left:1.4em">${mine.map(a=>`<li style="font-weight:500">${esc(a.song)}</li>`).join('')}</ol></div>` : '';
+
+  if(r.phase==='input'){
+    if(!r.pending.includes(me)){
+      return head + `<div class="panel"><h2>この巡の指名は完了しています</h2>
+        <p class="note"><span class="pulse"></span>ほかの参加者の再指名を待っています。</p></div>` + myList;
+    }
+    if(r.submitted.includes(me)){
+      return head + `<div class="panel"><h2>提出しました</h2>
+        <div class="pick"><div class="who">あなたの指名</div><div class="song">${esc(S.mySong)}</div></div>
+        <p class="note"><span class="pulse"></span>全員の提出と読み上げを待っています。</p></div>` + myList;
+    }
+    const taken = r.acquired.map(a=>a.song);
+    return head + `<div class="panel">
+      <h2>指名する楽曲を記入</h2>
+      <input type="text" id="song" maxlength="60" autocomplete="off" autocapitalize="off" autocorrect="off" enterkeyhint="send" placeholder="例：ネクロファンタジア" style="font-weight:500">
+      <button class="btn" id="submit" ${S.busy?'disabled':''}>${S.busy?'送信しています':'この曲を指名する'}</button>
+      ${taken.length?`<p class="note">指名済みで選べない曲：${taken.map(esc).join(' ／ ')}</p>`:''}
+      ${errBox()}
+    </div>` + myList;
+  }
+
+  if(r.phase==='reveal'){
+    return head + `<div class="panel tight"><h2>読み上げ</h2>
+      ${r.solos.map(g=>`<div class="pick"><div class="who">${esc(nameOf(g.ids[0]))}</div><div class="song">${esc(g.song)}</div></div>`).join('')}
+      ${r.contests.map(c=>`<div class="pick contest ${c.winner&&c.winner!==me&&c.ids.includes(me)?'lost':''}">
+        <div class="song">${esc(c.song)}</div>
+        <div class="cands">重複指名　${c.ids.map(id=>esc(nameOf(id))).join(' ／ ')}</div>
+        ${c.winner?`<div class="winner">交渉権獲得　${esc(nameOf(c.winner))}</div>`:'<div class="cands"><span class="pulse"></span>抽選中</div>'}
+      </div>`).join('')}
+      ${(!r.solos.length&&!r.contests.length)?'<p class="note">提出がありませんでした。</p>':''}
+    </div>` + myList;
+  }
+  return head + myList;
+}
+
+function viewDone(){
+  const r = S.room;
+  return `
+  <div class="masthead" style="border:none;padding-top:8px"><h1>指名終了</h1></div>
+  ${r.players.map(p=>{
+    const list = r.acquired.filter(a=>a.id===p.id).sort((a,b)=>a.round-b.round);
+    return `<div class="result-card"><h3>${esc(p.name)}${p.id===S.me?'（あなた）':''}</h3>
+      ${list.length?`<ol>${list.map(a=>`<li>${esc(a.song)}</li>`).join('')}</ol>`:'<p class="note">獲得なし</p>'}</div>`;
+  }).join('')}
+  <button class="btn ghost" id="copy">結果をテキストでコピー</button>
+  ${S.role==='host'?'<button class="btn ghost" id="again">同じ顔ぶれでもう一度</button>':''}
+  <button class="btn ghost" id="reset">最初の画面に戻る</button>
+  ${errBox()}`;
+}
+
+/* ---------- 操作 ---------- */
+function bind(){
+  document.querySelectorAll('[data-go]').forEach(b=>b.onclick=()=>{ S.err=''; S.view=b.dataset.go; render(); });
+  const on=(id,fn)=>{ const e=$(id); if(e) e.onclick=fn; };
+
+  on('create', ()=>guard(createRoom));
+  on('join',   ()=>guard(joinRoom));
+  on('start',  ()=>guard(()=>post('start')));
+  on('reveal', ()=>guard(()=>post('reveal')));
+  on('confirm',()=>guard(()=>post('confirm')));
+  on('submit', ()=>guard(submitSong));
+  on('again',  ()=>guard(()=>post('reset')));
+  on('blind',  ()=>{ S.blind=!S.blind; render(); });
+  on('copy',   copyResults);
+  on('reset',  ()=>{ clearSave(); location.reload(); });
+  on('retry',  ()=>location.reload());
+  on('manual', ()=>{ S.linkCode=null; S.err=''; render(); });
+  on('nexturl',()=>{ S.urlIdx++; render(); });
+  on('copylink', ()=>copyText(joinUrl(), 'copylink', 'コピーしました'));
+  on('sharelink',()=>{ if(navigator.share) navigator.share({title:'東方原曲ドラフト会議', text:'ドラフト会議に参加してください', url:joinUrl()}).catch(()=>{}); });
+
+  document.querySelectorAll('[data-draw]').forEach(b=>b.onclick=()=>drawLottery(b.dataset.draw));
+  document.querySelectorAll('[data-win]').forEach(b=>b.onclick=()=>guard(()=>post('winner',{key:b.dataset.win, playerId:b.dataset.id})));
+
+  const song=$('song');
+  if(song){ song.focus(); song.onkeydown=e=>{ if(e.key==='Enter') guard(submitSong); }; }
+  const jc=$('jcode');
+  if(jc) jc.oninput=()=>{ jc.value=jc.value.replace(/\D/g,'').slice(0,6); };
+}
+
+async function guard(fn){
+  if(S.busy) return;
+  S.busy=true; S.err=''; render();
+  try{ await fn(); }
+  catch(e){ console.error(e); S.err = e.message || 'うまくいきませんでした。'; }
+  finally{ S.busy=false; render(); }
+}
+
+async function createRoom(){
+  const cap    = Math.max(2, Math.min(MAX, parseInt(($('cap')||{}).value,10) || MAX));
+  const rounds = Math.max(1, Math.min(20,  parseInt(($('rounds')||{}).value,10) || 5));
+  const mode   = ($('mode')||{}).value || 'auto';
+  const data = await request('create', {cap, rounds, mode});
+  S.code=data.code; S.tk=data.token; S.role='host'; S.view='hostLobby';
+  save(); connect();
+}
+
+async function joinRoom(){
+  const code = S.linkCode || ((($('jcode')||{}).value)||'').trim();
+  const name = ((($('jname')||{}).value)||'').trim();
+  if(code.length!==6){ S.err='六桁の参加番号を入力してください。'; return; }
+  if(!name){ S.err='ペンネームを入力してください。'; return; }
+  const data = await request('join', {code, name});
+  S.code=data.code; S.tk=data.token; S.me=data.id; S.role='player'; S.view='playerLobby';
+  S.linkCode=null;
+  try{ history.replaceState(null,'',location.pathname); }catch(e){}
+  save(); connect();
+}
+
+async function submitSong(){
+  const raw = ((($('song')||{}).value)||'').trim();
+  if(!raw){ S.err='曲名を入力してください。'; return; }
+  const data = await post('submit', {song:raw});
+  S.mySong = data.song;
+}
+
+function drawLottery(key){
+  const c = S.room.contests.find(x=>x.key===key);
+  if(!c || c.winner || S.spinning) return;
+  if(window.matchMedia('(prefers-reduced-motion: reduce)').matches){
+    guard(()=>post('draw',{key})); return;
+  }
+  const idx = S.room.contests.findIndex(x=>x.key===key);
+  S.spinning = key; render();
+  const spin = $(`spin-${idx}`);
+  let t=0;
+  const iv = setInterval(()=>{
+    if(spin) spin.textContent = nameOf(c.ids[Math.floor(Math.random()*c.ids.length)]);
+    if(++t>16){ clearInterval(iv); S.spinning=null; guard(()=>post('draw',{key})); }
+  }, 110);
+}
+
+function copyText(text, btnId, label){
+  const done = ()=>{ const b=$(btnId); if(b) b.textContent = label; };
+  const fallback = ()=>{
+    const ta=document.createElement('textarea'); ta.value=text; document.body.appendChild(ta);
+    ta.select(); try{ document.execCommand('copy'); done(); }catch(e){} ta.remove();
+  };
+  if(navigator.clipboard) navigator.clipboard.writeText(text).then(done, fallback);
+  else fallback();
+}
+
+// QRが作れないほど長いURLでも画面が壊れないようにする
+function qrSafe(text){
+  try{ return qrSvg(text, 168); }
+  catch(e){ return '<p class="note">QRを作れませんでした。下のリンクを使ってください。</p>'; }
+}
+
+function copyResults(){
+  const r = S.room;
+  const text = ['東方原曲ドラフト会議 結果',''].concat(
+    r.players.map(p=>{
+      const l = r.acquired.filter(a=>a.id===p.id).sort((a,b)=>a.round-b.round);
+      return p.name + '\n' + (l.length ? l.map(a=>`  ${a.round}巡目　${a.song}`).join('\n') : '  獲得なし');
+    })).join('\n');
+  const done = ()=>{ const b=$('copy'); if(b) b.textContent='コピーしました'; };
+  if(navigator.clipboard) navigator.clipboard.writeText(text).then(done, fallback);
+  else fallback();
+  function fallback(){
+    const ta=document.createElement('textarea'); ta.value=text; document.body.appendChild(ta);
+    ta.select(); try{ document.execCommand('copy'); done(); }catch(e){} ta.remove();
+  }
+}
+
+/* ---------- 起動 ---------- */
+async function checkServer(){
+  if(location.protocol === 'file:') return false;
+  try{
+    const res = await fetch('/api/health', {cache:'no-store'});
+    const data = JSON.parse(await res.text());
+    if(!data || data.ok !== true) return false;
+    S.urls = Array.isArray(data.urls) ? data.urls : [];
+    return true;
+  }catch(e){ return false; }
+}
+
+function viewOffline(){
+  return `<div class="panel">
+    <h2>サーバが動いていません</h2>
+    <p class="note">この画面はサーバと組みで動きます。ファイルを直接開いても会議はできません。</p>
+    <p class="note">パソコンでフォルダを開き、<br><code>node server.js</code><br>を実行してから、表示されたアドレスをブラウザで開いてください。</p>
+    <button class="btn ghost" id="retry">もう一度確認する</button>
+    ${errBox()}
+  </div>`;
+}
+
+(async function init(){
+  if(!(await checkServer())){ S.view='offline'; render(); return; }
+  let ses = null;
+  try{ ses = JSON.parse(localStorage.getItem('thd:session')||'null'); }catch(e){}
+
+  const r = new URLSearchParams(location.search).get('r');
+  if(!ses && r && /^\d{6}$/.test(r)){ S.linkCode = r; S.view = 'join'; }
+  if(ses && ses.code && ses.tk){
+    S.code=ses.code; S.tk=ses.tk; S.role=ses.role;
+    connect();
+    setTimeout(()=>{ if(!S.room){ clearSave(); S.code=null; S.tk=null; S.role=null; S.view='home'; render(); } }, 2500);
+  }
+  render();
+})();
+</script>
+</body>
+</html>
