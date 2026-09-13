@@ -42,6 +42,10 @@ function isHost(room, tk){ return !!tk && room.hostToken === tk; }
 function playerOf(room, tk){ return room.players.find(p => p.token === tk) || null; }
 
 /* ---------- 配信する状態 ---------- */
+function playerState(p){
+  return { id: p.id, name: p.name, ended: !!p.ended };
+}
+
 function stateFor(room, role, viewerId){
   const base = {
     code: room.code,
@@ -52,19 +56,34 @@ function stateFor(room, role, viewerId){
     round: room.round,
     wave: room.wave,
     phase: room.phase,
-    players: room.players.map(p => ({ id: p.id, name: p.name })),
+    players: room.players.map(playerState),
     pending: room.pending,
     submitted: room.pending.filter(id => room.subs[id]),
-    solos: room.solos,
-    contests: room.contests,
     acquired: room.acquired,
     role,
     you: viewerId || null,
-    v: room.v
+    v: room.v,
+    revealIndex: room.revealIndex || 0,
+    revealTotal: room.revealOrder ? room.revealOrder.length : 0
   };
-  // 提出された曲名を見られるのはホストだけ
+
   if (role === 'host'){
-    base.picks = room.pending.map(id => ({ id, song: room.subs[id] ? room.subs[id].song : null }));
+    if (room.phase === 'reveal' && room.revealOrder.length){
+      const id = room.revealOrder[room.revealIndex];
+      const pl = room.players.find(p => p.id === id);
+      const sub = room.subs[id];
+      base.reveal = pl && sub ? { id, name: pl.name, song: sub.song } : null;
+    } else {
+      base.reveal = null;
+    }
+    if (room.phase === 'decide'){
+      base.groups = room.groups.map(g => ({
+        key: g.key, song: g.song, ids: g.ids,
+        decision: g.decision || null, winner: g.winner || null
+      }));
+    } else {
+      base.groups = [];
+    }
   }
   return base;
 }
@@ -72,152 +91,222 @@ function stateFor(room, role, viewerId){
 function broadcast(room){
   room.v += 1;
   for (const c of room.clients){
-    try {
-      c.res.write(`data: ${JSON.stringify(stateFor(room, c.role, c.viewerId))}\n\n`);
-    } catch (e) { /* 切断済みは次の掃除で落とす */ }
+    try { c.res.write(`data: ${JSON.stringify(stateFor(room, c.role, c.viewerId))}\n\n`); }
+    catch (e) { /* 切断済みは次の掃除で落とす */ }
   }
 }
 
 /* ---------- 進行のロジック ---------- */
-function doReveal(room){
+function activeIds(room){
+  return room.players.filter(p => !p.ended).map(p => p.id);
+}
+
+function finishRoom(room){
+  room.status = 'done';
+  room.phase = 'done';
+  room.pending = [];
+  room.subs = {};
+  room.groups = [];
+  room.revealOrder = [];
+  room.revealIndex = 0;
+}
+
+function enterReveal(room){
+  room.revealOrder = room.pending.filter(id => room.subs[id]);
+  room.revealIndex = 0;
+  room.groups = [];
+  room.phase = room.revealOrder.length ? 'reveal' : 'decide';
+  if (!room.revealOrder.length) buildGroups(room);
+}
+
+function buildGroups(room){
   const groups = new Map();
-  for (const id of room.pending){
+  for (const id of room.revealOrder){
     const s = room.subs[id];
     if (!s) continue;
     const k = norm(s.song);
-    if (!groups.has(k)) groups.set(k, { key: k, song: s.song, ids: [], winner: null });
+    if (!groups.has(k)) groups.set(k, { key:k, song:s.song, ids:[], decision:null, winner:null });
     groups.get(k).ids.push(id);
   }
-  room.solos = [];
-  room.contests = [];
-  for (const g of groups.values()) (g.ids.length === 1 ? room.solos : room.contests).push(g);
-  room.phase = 'reveal';
+  room.groups = Array.from(groups.values());
+  room.phase = 'decide';
 }
 
 function doConfirm(room){
-  for (const g of room.solos)    room.acquired.push({ round: room.round, id: g.ids[0], song: g.song });
-  for (const g of room.contests) room.acquired.push({ round: room.round, id: g.winner,  song: g.song });
+  const losers = [];
+  for (const g of room.groups){
+    const winner = g.winner || (g.decision === 'solo' && g.ids.length === 1 ? g.ids[0] : null);
+    if (!winner) throw new Error('すべての曲について当選者を決定してください。');
+    room.acquired.push({ round: room.round, id: winner, song: g.song });
+    for (const id of g.ids) if (id !== winner) losers.push(id);
+  }
 
-  const losers  = room.contests.flatMap(g => g.ids.filter(i => i !== g.winner));
-  const missing = room.pending.filter(id => !room.subs[id]);
-  const next = losers.concat(missing);
-
-  room.solos = [];
-  room.contests = [];
+  room.groups = [];
+  room.revealOrder = [];
+  room.revealIndex = 0;
   room.subs = {};
 
-  if (next.length){
-    room.pending = next;
+  if (!activeIds(room).length){
+    finishRoom(room);
+    return;
+  }
+
+  if (losers.length){
+    room.pending = losers.filter(id => {
+      const p = room.players.find(x=>x.id===id);
+      return p && !p.ended;
+    });
     room.wave += 1;
-    room.phase = 'input';
+    room.phase = room.pending.length ? 'input' : 'input';
   } else if (room.round >= room.rounds){
-    room.status = 'done';
-    room.phase = 'done';
-    room.pending = [];
+    finishRoom(room);
   } else {
     room.round += 1;
     room.wave = 1;
     room.phase = 'input';
-    room.pending = room.players.map(p => p.id);
+    room.pending = activeIds(room);
   }
+}
+
+function maybeEnterReveal(room){
+  if (room.status !== 'playing' || room.phase !== 'input') return;
+  if (room.pending.length === 0){
+    if (!activeIds(room).length) finishRoom(room);
+    return;
+  }
+  if (room.pending.every(id => room.subs[id])) enterReveal(room);
 }
 
 /* ---------- API ---------- */
 const api = {
   create(body){
-    const cap    = Math.max(2,  Math.min(MAX_PLAYERS, parseInt(body.cap, 10)    || MAX_PLAYERS));
-    const rounds = Math.max(1,  Math.min(20,          parseInt(body.rounds, 10) || 5));
+    const cap    = Math.max(2, Math.min(MAX_PLAYERS, parseInt(body.cap, 10) || MAX_PLAYERS));
+    const rounds = Math.max(1, Math.min(20, parseInt(body.rounds, 10) || 5));
     const mode   = body.mode === 'manual' ? 'manual' : 'auto';
     const room = {
-      code: newCode(), hostToken: token(),
-      cap, rounds, mode,
-      status: 'lobby', round: 1, wave: 1, phase: 'input',
-      players: [], pending: [], subs: {}, solos: [], contests: [], acquired: [],
-      clients: new Set(), v: 0, touched: Date.now()
+      code: newCode(), hostToken: token(), cap, rounds, mode,
+      status:'lobby', round:1, wave:1, phase:'input',
+      players:[], pending:[], subs:{}, groups:[], revealOrder:[], revealIndex:0,
+      acquired:[], clients:new Set(), v:0, touched:Date.now()
     };
     rooms.set(room.code, room);
     console.log(`部屋を作成： ${room.code}（定員${cap}名・${rounds}巡）`);
-    return { ok: true, code: room.code, token: room.hostToken, role: 'host' };
+    return {ok:true, code:room.code, token:room.hostToken, role:'host'};
   },
 
   join(body){
     const room = findRoom(body.code);
-    if (!room) return { ok: false, error: 'その番号の部屋は見つかりません。番号を確かめてください。' };
-    if (room.status !== 'lobby') return { ok: false, error: 'この会議はすでに始まっています。' };
-    const name = String(body.name || '').trim().slice(0, 12);
-    if (!name) return { ok: false, error: 'ペンネームを入力してください。' };
-    if (room.players.length >= room.cap) return { ok: false, error: `定員（${room.cap}名）に達しています。` };
-    if (room.players.some(p => p.name === name)) return { ok: false, error: 'そのペンネームは使われています。別の名前にしてください。' };
-
-    const p = { id: token().slice(0, 8), name, token: token() };
+    if (!room) return {ok:false, error:'その番号の部屋は見つかりません。番号を確かめてください。'};
+    if (room.status !== 'lobby') return {ok:false, error:'この会議はすでに始まっています。'};
+    const name = String(body.name || '').trim().slice(0,12);
+    if (!name) return {ok:false, error:'ペンネームを入力してください。'};
+    if (room.players.length >= room.cap) return {ok:false, error:`定員（${room.cap}名）に達しています。`};
+    if (room.players.some(p=>p.name===name)) return {ok:false, error:'そのペンネームは使われています。別の名前にしてください。'};
+    const p = {id:token().slice(0,8), name, token:token(), ended:false};
     room.players.push(p);
     broadcast(room);
-    return { ok: true, code: room.code, token: p.token, id: p.id, role: 'player' };
+    return {ok:true, code:room.code, token:p.token, id:p.id, role:'player'};
   },
 
   start(room){
-    if (room.status !== 'lobby') return { ok: false, error: 'すでに開始しています。' };
-    if (room.players.length < 2) return { ok: false, error: '2名以上で開始できます。' };
-    room.status = 'playing';
-    room.round = 1; room.wave = 1; room.phase = 'input';
-    room.pending = room.players.map(p => p.id);
-    room.subs = {}; room.solos = []; room.contests = []; room.acquired = [];
+    if (room.status !== 'lobby') return {ok:false,error:'すでに開始しています。'};
+    if (room.players.length < 2) return {ok:false,error:'2名以上で開始できます。'};
+    room.status='playing'; room.round=1; room.wave=1; room.phase='input';
+    room.players.forEach(p=>p.ended=false);
+    room.pending=activeIds(room); room.subs={}; room.groups=[]; room.revealOrder=[]; room.revealIndex=0; room.acquired=[];
     broadcast(room);
-    return { ok: true };
+    return {ok:true};
   },
 
   submit(room, player, body){
-    if (room.status !== 'playing' || room.phase !== 'input') return { ok: false, error: 'いまは指名を受け付けていません。' };
-    if (!room.pending.includes(player.id)) return { ok: false, error: 'この巡の指名はすでに終わっています。' };
-    const song = String(body.song || '').trim().slice(0, 60);
-    if (!song) return { ok: false, error: '曲名を入力してください。' };
-    if (room.acquired.some(a => norm(a.song) === norm(song))) {
-      return { ok: false, error: 'その曲はすでに指名されています。別の曲を選んでください。' };
-    }
-    room.subs[player.id] = { round: room.round, wave: room.wave, song };
+    if (room.status!=='playing' || room.phase!=='input') return {ok:false,error:'いまは指名を受け付けていません。'};
+    if (player.ended) return {ok:false,error:'あなたは指名終了を選択しています。'};
+    if (!room.pending.includes(player.id)) return {ok:false,error:'この巡の指名はすでに終わっています。'};
+    const song=String(body.song||'').trim().slice(0,60);
+    if(!song) return {ok:false,error:'曲名を入力してください。'};
+    if(room.acquired.some(a=>norm(a.song)===norm(song))) return {ok:false,error:'その曲はすでに獲得されています。別の曲を選んでください。'};
+    room.subs[player.id]={round:room.round,wave:room.wave,song};
+    maybeEnterReveal(room);
     broadcast(room);
-    return { ok: true, song };
+    return {ok:true,song};
   },
 
-  reveal(room){
-    if (room.phase !== 'input') return { ok: false, error: 'いまは読み上げに進めません。' };
-    doReveal(room);
+  finish(room, player){
+    if (room.status!=='playing' || room.phase!=='input') return {ok:false,error:'いまは指名終了を受け付けていません。'};
+    if (player.ended) return {ok:false,error:'すでに指名終了しています。'};
+    const idx=room.pending.indexOf(player.id);
+    if(idx<0) return {ok:false,error:'この巡の指名はすでに終わっています。'};
+    delete room.subs[player.id];
+    player.ended=true;
+    room.pending.splice(idx,1);
+    if (!activeIds(room).length){
+      finishRoom(room);
+    } else {
+      maybeEnterReveal(room);
+    }
     broadcast(room);
-    return { ok: true };
+    return {ok:true};
+  },
+
+  nextReveal(room){
+    if(room.phase!=='reveal') return {ok:false,error:'いまは指名発表中ではありません。'};
+    if(!room.revealOrder.length) { buildGroups(room); broadcast(room); return {ok:true}; }
+    if(room.revealIndex < room.revealOrder.length-1){
+      room.revealIndex += 1;
+    } else {
+      buildGroups(room);
+    }
+    broadcast(room);
+    return {ok:true};
+  },
+
+  decision(room, body){
+    if(room.phase!=='decide') return {ok:false,error:'いまは抽選方法を決める段階ではありません。'};
+    const g=room.groups.find(x=>x.key===body.key);
+    if(!g) return {ok:false,error:'その曲の決定が見つかりません。'};
+    const mode=body.mode==='solo'?'solo':body.mode==='lottery'?'lottery':null;
+    if(!mode) return {ok:false,error:'決定方法が正しくありません。'};
+    g.decision=mode; g.winner=(mode==='solo' && g.ids.length===1)?g.ids[0]:null;
+    broadcast(room);
+    return {ok:true};
   },
 
   draw(room, body){
-    const c = room.contests.find(x => x.key === body.key);
-    if (!c) return { ok: false, error: 'その抽選は見つかりません。' };
-    if (c.winner) return { ok: false, error: 'すでに抽選済みです。' };
-    c.winner = c.ids[crypto.randomInt(c.ids.length)];
+    if(room.phase!=='decide') return {ok:false,error:'いまは抽選できません。'};
+    const c=room.groups.find(x=>x.key===body.key);
+    if(!c) return {ok:false,error:'その抽選は見つかりません。'};
+    if(c.decision!=='lottery') return {ok:false,error:'この曲は抽選に設定されていません。'};
+    if(c.winner) return {ok:false,error:'すでに当選者が決まっています。'};
+    c.winner=c.ids[crypto.randomInt(c.ids.length)];
     broadcast(room);
-    return { ok: true, winner: c.winner };
+    return {ok:true,winner:c.winner};
   },
 
   winner(room, body){
-    const c = room.contests.find(x => x.key === body.key);
-    if (!c) return { ok: false, error: 'その抽選は見つかりません。' };
-    if (c.winner) return { ok: false, error: 'すでに抽選済みです。' };
-    if (!c.ids.includes(body.playerId)) return { ok: false, error: 'その参加者は候補にいません。' };
-    c.winner = body.playerId;
+    if(room.phase!=='decide') return {ok:false,error:'いまは当選者を決める段階ではありません。'};
+    const c=room.groups.find(x=>x.key===body.key);
+    if(!c) return {ok:false,error:'その曲の決定が見つかりません。'};
+    if(c.decision!=='solo') return {ok:false,error:'この曲は抽選に設定されています。'};
+    if(!c.ids.includes(body.playerId)) return {ok:false,error:'その参加者は候補にいません。'};
+    c.winner=body.playerId;
     broadcast(room);
-    return { ok: true };
+    return {ok:true};
   },
 
   confirm(room){
-    if (room.phase !== 'reveal') return { ok: false, error: 'いまは確定できません。' };
-    if (room.contests.some(c => !c.winner)) return { ok: false, error: '抽選が残っています。' };
+    if(room.phase!=='decide') return {ok:false,error:'いまは確定できません。'};
+    if(room.groups.some(g=>!g.decision || !g.winner)) return {ok:false,error:'すべての曲について「単独指名／抽選」と当選者を決めてください。'};
     doConfirm(room);
     broadcast(room);
-    return { ok: true };
+    return {ok:true};
   },
 
   reset(room){
-    room.status = 'lobby'; room.round = 1; room.wave = 1; room.phase = 'input';
-    room.pending = []; room.subs = {}; room.solos = []; room.contests = []; room.acquired = [];
+    room.status='lobby'; room.round=1; room.wave=1; room.phase='input';
+    room.players.forEach(p=>p.ended=false);
+    room.pending=[]; room.subs={}; room.groups=[]; room.revealOrder=[]; room.revealIndex=0; room.acquired=[];
     broadcast(room);
-    return { ok: true };
+    return {ok:true};
   }
 };
 
@@ -327,7 +416,7 @@ const server = http.createServer(async (req, res) => {
       const room = findRoom(body.code);
       if (!room) return send(res, 404, { ok: false, error: '部屋が見つかりません。サーバが再起動されたかもしれません。' });
 
-      const hostOnly = ['start', 'reveal', 'draw', 'winner', 'confirm', 'reset'];
+      const hostOnly = ['start', 'nextReveal', 'decision', 'draw', 'winner', 'confirm', 'reset'];
       if (hostOnly.includes(action)){
         if (!isHost(room, body.token)) return send(res, 403, { ok: false, error: 'ホストだけが操作できます。' });
         return send(res, 200, api[action](room, body));
@@ -336,6 +425,11 @@ const server = http.createServer(async (req, res) => {
         const pl = playerOf(room, body.token);
         if (!pl) return send(res, 403, { ok: false, error: 'この部屋に参加していません。' });
         return send(res, 200, api.submit(room, pl, body));
+      }
+      if (action === 'finish'){
+        const pl = playerOf(room, body.token);
+        if (!pl) return send(res, 403, { ok: false, error: 'この部屋に参加していません。' });
+        return send(res, 200, api.finish(room, pl));
       }
       return send(res, 404, { ok: false, error: '不明な操作です' });
     } catch (e){

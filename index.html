@@ -119,7 +119,7 @@ input:focus,select:focus,button:focus-visible{outline:2px solid var(--kin);outli
 
 <div class="masthead">
   <h1>東方原曲ドラフト会議</h1>
-  <p>最大十二名・重複指名は抽選</p>
+  <p>最大十二名・重複指名はホストが決定</p>
 </div>
 
 <main id="app"><div class="panel"><p class="note"><span class="pulse"></span>読み込んでいます</p></div></main>
@@ -511,12 +511,6 @@ function viewHostSetup(){
     <p class="note">この人数が揃うと締め切ります。少ない人数で始めることもできます。</p>
     <label for="rounds">何巡まで指名しますか</label>
     <input type="number" id="rounds" min="1" max="20" value="5" inputmode="numeric">
-    <label for="mode">重複したときの決め方</label>
-    <select id="mode">
-      <option value="auto">この画面で抽選する</option>
-      <option value="manual">じゃんけんなどで決めて当選者を選ぶ</option>
-    </select>
-    <p class="note">どちらを選んでも、抽選のたびに切り替えられます。</p>
     <button class="btn" id="create" ${S.busy?'disabled':''}>${S.busy?'部屋を建てています':'部屋を建てる'}</button>
     <button class="btn ghost" data-go="home">戻る</button>
     ${errBox()}
@@ -554,55 +548,90 @@ function viewHostLobby(){
 
 function viewHostGame(){
   const r = S.room;
+  const active = r.players.filter(p=>!p.ended);
+  const ended = r.players.filter(p=>p.ended);
   const head = `<div class="roundbar"><span class="r">第${r.round}巡 指名</span>
     <span class="w">${r.wave>1?`外れ${r.wave-1}回目の再指名`:`全${r.rounds}巡`}</span></div>`;
 
   if(r.phase==='input'){
-    const picks = r.picks || [];
-    const got = picks.filter(x=>x.song).length;
+    const total = r.pending.length;
+    const got = r.submitted.length;
     return head + `
     <div class="panel tight">
-      <h2>提出 ${got} / ${picks.length}</h2>
+      <h2>指名受付 ${got} / ${total}</h2>
+      <p class="note">全員の指名が終わると、ホスト画面で一人ずつ発表します。</p>
       <ul class="roster">
-        ${picks.map(x=> x.song
-          ? `<li class="pick-row"><span class="nm">${esc(nameOf(x.id))}</span>
-               <span class="tag done">提出</span>
-               <span class="song-cell ${S.blind?'blind':''}">${esc(x.song)}</span></li>`
-          : `<li class="pick-row"><span class="nm">${esc(nameOf(x.id))}</span><span class="tag wait">記入中</span></li>`).join('')}
+        ${active.map((p,i)=>{
+          const done=r.submitted.includes(p.id);
+          return `<li><span class="num">${i+1}</span><span class="nm">${esc(p.name)}</span>
+            <span class="tag ${done?'done':'wait'}">${done?'提出済み':'指名待ち'}</span></li>`;
+        }).join('')}
+        ${ended.map(p=>`<li><span class="num">–</span><span class="nm">${esc(p.name)}</span><span class="tag wait">指名終了</span></li>`).join('')}
       </ul>
-      <p class="note"><button class="btn ghost small" id="blind">${S.blind?'曲名を表示':'曲名を伏せる'}</button><span class="wide-only">画面を共有するときに使います</span></p>
     </div>
-    <button class="btn" id="reveal" ${got===0||S.busy?'disabled':''}>読み上げに進む</button>
-    ${got<picks.length?'<p class="note center">未提出者がいます。進めると次の再指名に持ち越されます。</p>':''}
+    ${total===0?'<div class="panel"><h2>参加者全員が指名終了</h2><p class="note">この会議は終了しました。</p></div>':''}
     ${errBox()}`;
   }
 
   if(r.phase==='reveal'){
-    const rest = r.contests.filter(c=>!c.winner).length;
-    return head + `
-    ${r.solos.length?`<div class="panel tight"><h2>単独指名</h2>
-      ${r.solos.map(g=>`<div class="pick"><div class="who">${esc(nameOf(g.ids[0]))}</div><div class="song">${esc(g.song)}</div></div>`).join('')}</div>`:''}
-    ${r.contests.length?`<div class="panel tight"><h2>重複指名</h2>
-      ${r.contests.map((c,i)=>contestHost(c,i)).join('')}</div>`:''}
-    ${(!r.solos.length&&!r.contests.length)?'<div class="panel"><p class="note">提出がありませんでした。</p></div>':''}
-    <button class="btn" id="confirm" ${rest||S.busy?'disabled':''}>この結果で確定する</button>
-    ${rest?`<p class="note center">抽選が残っています（${rest}件）</p>`:''}
+    const rv = r.reveal;
+    return head + `<div class="panel tight center">
+      <h2>指名発表</h2>
+      ${rv ? `<p class="note">${r.revealIndex+1} / ${r.revealTotal}</p>
+        <div class="pick"><div class="who">${esc(rv.name)}</div><div class="song">${esc(rv.song)}</div></div>
+        <p class="note">この指名を確認したら、次の人へ進んでください。</p>
+        <button class="btn" id="nextReveal" ${S.busy?'disabled':''}>${r.revealIndex+1<r.revealTotal?'次の指名を表示':'全員の指名を表示して決定へ進む'}</button>`
+        : `<p class="note">指名を準備しています。</p>`}
+    </div>${errBox()}`;
+  }
+
+  if(r.phase==='decide'){
+    const groups=r.groups||[];
+    const ready=groups.every(g=>g.decision && g.winner);
+    return head + `<div class="panel tight">
+      <h2>単独指名 / 抽選を決定</h2>
+      <p class="note">全員の指名を確認しました。曲ごとにホストが「単独指名」か「抽選」かを決めてください。</p>
+      ${groups.length ? groups.map((g,i)=>decisionHost(g,i)).join('') : '<p class="note">指名はありませんでした。</p>'}
+    </div>
+    <button class="btn" id="confirm" ${!groups.length||!ready||S.busy?'disabled':''}>この結果で確定する</button>
+    ${!ready&&groups.length?'<p class="note center">すべての曲の決定を終えると確定できます。</p>':''}
     ${errBox()}`;
   }
+
   return head;
 }
 
-function contestHost(c,i){
-  const spinning = S.spinning===c.key;
-  return `<div class="pick contest">
-    <div class="song">${esc(c.song)}</div>
-    <div class="cands">${c.ids.map(id=>esc(nameOf(id))).join(' ／ ')}</div>
-    ${c.winner ? `<div class="winner">交渉権獲得　${esc(nameOf(c.winner))}</div>`
-    : `<div class="lottery">
-        <div class="spin" id="spin-${i}">${spinning?'&nbsp;':'抽選箱'}</div>
-        <button class="cand-btn" data-draw="${esc(c.key)}" ${spinning?'disabled':''}>この画面で抽選する</button>
-        ${c.ids.map(id=>`<button class="cand-btn" data-win="${esc(c.key)}" data-id="${esc(id)}" ${spinning?'disabled':''}>${esc(nameOf(id))}が当選</button>`).join('')}
-      </div>`}
+function decisionHost(g,i){
+  const spinning=S.spinning===g.key;
+  const winnerName=g.winner?nameOf(g.winner):'';
+  let body='';
+  if(!g.decision){
+    body=`<div class="lottery">
+      <p class="note">${g.ids.length>1?`重複指名：${g.ids.map(id=>esc(nameOf(id))).join(' ／ ')}`:`指名者：${esc(nameOf(g.ids[0]))}`}</p>
+      <button class="cand-btn" data-decision="solo" data-key="${esc(g.key)}">単独指名にする</button>
+      <button class="cand-btn" data-decision="lottery" data-key="${esc(g.key)}">抽選にする</button>
+    </div>`;
+  } else if(g.decision==='lottery'){
+    body=`<div class="lottery">
+      <div class="winner">抽選に設定</div>
+      ${winnerName?`<div class="winner">交渉権獲得　${esc(winnerName)}</div>`:
+        `<div class="spin" id="spin-${i}">${spinning?'&nbsp;':'抽選箱'}</div>
+         <button class="cand-btn" data-draw="${esc(g.key)}" ${spinning?'disabled':''}>この画面で抽選する</button>`}
+      <button class="cand-btn" data-decision="solo" data-key="${esc(g.key)}">単独指名に変更する</button>
+    </div>`;
+  } else {
+    body=`<div class="lottery">
+      <div class="winner">単独指名に設定</div>
+      ${winnerName?`<div class="winner">獲得者　${esc(winnerName)}</div>`:
+        `<p class="note">誰を獲得者にするか選んでください。</p>
+         ${g.ids.map(id=>`<button class="cand-btn" data-win="${esc(g.key)}" data-id="${esc(id)}">${esc(nameOf(id))}を獲得者にする</button>`).join('')}`}
+      <button class="cand-btn" data-decision="lottery" data-key="${esc(g.key)}">抽選に変更する</button>
+    </div>`;
+  }
+  return `<div class="pick ${g.ids.length>1?'contest':''}">
+    <div class="song">${esc(g.song)}</div>
+    <div class="cands">指名者：${g.ids.map(id=>esc(nameOf(id))).join(' ／ ')}</div>
+    ${body}
   </div>`;
 }
 
@@ -622,7 +651,7 @@ function viewJoin(){
   <div class="panel">
     <h2>会議に参加</h2>
     <label for="jcode">参加番号（六桁）</label>
-    <input type="text" id="jcode" inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="off" placeholder="000000">
+    <input type="text" id="jcode" inputmode="numeric" pattern="[0-9]*" maxlength="6" value="${esc(S.joinCode)}" autocomplete="off" placeholder="000000">
     <label for="jname">ペンネーム</label>
     <input type="text" id="jname" maxlength="12" autocomplete="off" autocapitalize="off" autocorrect="off" placeholder="読み上げられる名前">
     <button class="btn" id="join" ${S.busy?'disabled':''}>${S.busy?'参加しています':'参加する'}</button>
@@ -644,44 +673,45 @@ function viewPlayerLobby(){
 }
 
 function viewPlayerGame(){
-  const r = S.room, me = S.me;
-  const head = `<div class="roundbar"><span class="r">第${r.round}巡 指名</span>
+  const r=S.room, me=S.me;
+  const mePlayer=(r.players||[]).find(p=>p.id===me);
+  const head=`<div class="roundbar"><span class="r">第${r.round}巡 指名</span>
     <span class="w">${r.wave>1?'外れ再指名':`全${r.rounds}巡`}</span></div>`;
-  const mine = r.acquired.filter(a=>a.id===me);
-  const myList = mine.length ? `<div class="panel tight"><h2>あなたの獲得楽曲</h2>
-    <ol style="margin:0;padding-left:1.4em">${mine.map(a=>`<li style="font-weight:500">${esc(a.song)}</li>`).join('')}</ol></div>` : '';
+  const mine=r.acquired.filter(a=>a.id===me);
+  const myList=mine.length?`<div class="panel tight"><h2>あなたの獲得楽曲</h2>
+    <ol style="margin:0;padding-left:1.4em">${mine.map(a=>`<li style="font-weight:500">${esc(a.song)}</li>`).join('')}</ol></div>`:'';
+
+  if(mePlayer && mePlayer.ended){
+    return head + `<div class="panel"><h2>指名終了しています</h2>
+      <p class="note">これ以降の巡では指名できません。ほかの参加者の結果を待っています。</p></div>` + myList;
+  }
 
   if(r.phase==='input'){
-    if(!r.pending.includes(me)){
-      return head + `<div class="panel"><h2>この巡の指名は完了しています</h2>
-        <p class="note"><span class="pulse"></span>ほかの参加者の再指名を待っています。</p></div>` + myList;
-    }
-    if(r.submitted.includes(me)){
-      return head + `<div class="panel"><h2>提出しました</h2>
-        <div class="pick"><div class="who">あなたの指名</div><div class="song">${esc(S.mySong)}</div></div>
-        <p class="note"><span class="pulse"></span>全員の提出と読み上げを待っています。</p></div>` + myList;
-    }
-    const taken = r.acquired.map(a=>a.song);
+    if(!r.pending.includes(me)) return head + `<div class="panel"><h2>この巡の指名は完了しています</h2>
+      <p class="note"><span class="pulse"></span>ほかの参加者の指名を待っています。</p></div>` + myList;
+    if(r.submitted.includes(me)) return head + `<div class="panel"><h2>提出しました</h2>
+      <div class="pick"><div class="who">あなたの指名</div><div class="song">${esc(S.mySong)}</div></div>
+      <p class="note"><span class="pulse"></span>全員の提出と発表を待っています。</p>
+      <p class="note">この巡の指名は確定処理まで行われます。指名終了したい場合は、次の巡が始まった時点で「指名終了」を選んでください。</p>
+      ${errBox()}</div>` + myList;
+    const taken=r.acquired.map(a=>a.song);
     return head + `<div class="panel">
       <h2>指名する楽曲を記入</h2>
       <input type="text" id="song" maxlength="60" value="${esc(S.draftSong)}" autocomplete="off" autocapitalize="off" autocorrect="off" enterkeyhint="send" placeholder="例：ネクロファンタジア" style="font-weight:500">
       <button class="btn" id="submit" ${S.busy?'disabled':''}>${S.busy?'送信しています':'この曲を指名する'}</button>
-      ${taken.length?`<p class="note">指名済みで選べない曲：${taken.map(esc).join(' ／ ')}</p>`:''}
+      <button class="btn ghost" id="finish" ${S.busy?'disabled':''}>この会議で指名終了する</button>
+      <p class="note">指名終了を選ぶと、今回の巡を含めて以後の指名から除外されます。</p>
+      ${taken.length?`<p class="note">獲得済みで選べない曲：${taken.map(esc).join(' ／ ')}</p>`:''}
       ${errBox()}
     </div>` + myList;
   }
 
-  if(r.phase==='reveal'){
-    return head + `<div class="panel tight"><h2>読み上げ</h2>
-      ${r.solos.map(g=>`<div class="pick"><div class="who">${esc(nameOf(g.ids[0]))}</div><div class="song">${esc(g.song)}</div></div>`).join('')}
-      ${r.contests.map(c=>`<div class="pick contest ${c.winner&&c.winner!==me&&c.ids.includes(me)?'lost':''}">
-        <div class="song">${esc(c.song)}</div>
-        <div class="cands">重複指名　${c.ids.map(id=>esc(nameOf(id))).join(' ／ ')}</div>
-        ${c.winner?`<div class="winner">交渉権獲得　${esc(nameOf(c.winner))}</div>`:'<div class="cands"><span class="pulse"></span>抽選中</div>'}
-      </div>`).join('')}
-      ${(!r.solos.length&&!r.contests.length)?'<p class="note">提出がありませんでした。</p>':''}
-    </div>` + myList;
-  }
+  if(r.phase==='reveal') return head + `<div class="panel"><h2>指名発表中</h2>
+    <p class="note"><span class="pulse"></span>ホストが一人ずつ指名を発表しています。</p></div>` + myList;
+
+  if(r.phase==='decide') return head + `<div class="panel"><h2>決定中</h2>
+    <p class="note"><span class="pulse"></span>ホストが各曲を「単独指名」か「抽選」か決定しています。</p></div>` + myList;
+
   return head + myList;
 }
 
@@ -692,7 +722,8 @@ function viewDone(){
   ${r.players.map(p=>{
     const list = r.acquired.filter(a=>a.id===p.id).sort((a,b)=>a.round-b.round);
     return `<div class="result-card"><h3>${esc(p.name)}${p.id===S.me?'（あなた）':''}</h3>
-      ${list.length?`<ol>${list.map(a=>`<li>${esc(a.song)}</li>`).join('')}</ol>`:'<p class="note">獲得なし</p>'}</div>`;
+      <p class="note">${p.ended?'指名終了':'最終巡まで参加'}</p>
+      ${list.length?`<ol>${list.map(a=>`<li><span class="note">${a.round}巡目：</span>${esc(a.song)}</li>`).join('')}</ol>`:'<p class="note">獲得なし</p>'}</div>`;
   }).join('')}
   <button class="btn ghost" id="copy">結果をテキストでコピー</button>
   ${S.role==='host'?'<button class="btn ghost" id="again">同じ顔ぶれでもう一度</button>':''}
@@ -708,9 +739,10 @@ function bind(){
   on('create', ()=>guard(createRoom));
   on('join',   ()=>guard(joinRoom));
   on('start',  ()=>guard(()=>post('start')));
-  on('reveal', ()=>guard(()=>post('reveal')));
+  on('nextReveal', ()=>guard(()=>post('nextReveal')));
   on('confirm',()=>guard(()=>post('confirm')));
   on('submit', ()=>guard(submitSong));
+  on('finish', ()=>{ if(window.confirm('この巡の指名を行わず、以後の指名から外れます。終了しますか？')) guard(()=>post('finish')); });
   on('again',  ()=>guard(()=>post('reset')));
   on('blind',  ()=>{ S.blind=!S.blind; render(); });
   on('copy',   copyResults);
@@ -721,16 +753,14 @@ function bind(){
   on('copylink', ()=>copyText(joinUrl(), 'copylink', 'コピーしました'));
   on('sharelink',()=>{ if(navigator.share) navigator.share({title:'東方原曲ドラフト会議', text:'ドラフト会議に参加してください', url:joinUrl()}).catch(()=>{}); });
 
+  document.querySelectorAll('[data-decision]').forEach(b=>b.onclick=()=>guard(()=>post('decision',{key:b.dataset.key,mode:b.dataset.decision})));
   document.querySelectorAll('[data-draw]').forEach(b=>b.onclick=()=>drawLottery(b.dataset.draw));
-  document.querySelectorAll('[data-win]').forEach(b=>b.onclick=()=>guard(()=>post('winner',{key:b.dataset.win, playerId:b.dataset.id})));
+  document.querySelectorAll('[data-win]').forEach(b=>b.onclick=()=>guard(()=>post('winner',{key:b.dataset.win,playerId:b.dataset.id})));
 
   const song=$('song');
-  if(song){ song.focus(); song.onkeydown=e=>{ if(e.key==='Enter') guard(submitSong); }; }
+  if(song){ song.focus(); song.oninput=()=>{ S.draftSong=song.value.slice(0,60); }; song.onkeydown=e=>{ if(e.key==='Enter') guard(submitSong); }; }
   const jc=$('jcode');
-  if(jc) jc.oninput=()=>{
-    jc.value=jc.value.replace(/\D/g,'').slice(0,6);
-    S.joinCode=jc.value;
-  };
+  if(jc) jc.oninput=()=>{ jc.value=jc.value.replace(/\D/g,'').slice(0,6); S.joinCode=jc.value; };
   const jn=$('jname');
   if(jn) jn.oninput=()=>{ S.joinName=jn.value.slice(0,12); };
 }
@@ -748,8 +778,7 @@ async function guard(fn){
 async function createRoom(){
   const cap    = Math.max(2, Math.min(MAX, parseInt(($('cap')||{}).value,10) || MAX));
   const rounds = Math.max(1, Math.min(20,  parseInt(($('rounds')||{}).value,10) || 5));
-  const mode   = ($('mode')||{}).value || 'auto';
-  const data = await request('create', {cap, rounds, mode});
+  const data = await request('create', {cap, rounds});
   S.code=data.code; S.tk=data.token; S.role='host'; S.view='hostLobby';
   save(); connect();
 }
@@ -780,19 +809,17 @@ async function submitSong(){
 }
 
 function drawLottery(key){
-  const c = S.room.contests.find(x=>x.key===key);
-  if(!c || c.winner || S.spinning) return;
-  if(window.matchMedia('(prefers-reduced-motion: reduce)').matches){
-    guard(()=>post('draw',{key})); return;
-  }
-  const idx = S.room.contests.findIndex(x=>x.key===key);
-  S.spinning = key; render();
-  const spin = $(`spin-${idx}`);
+  const c=(S.room.groups||[]).find(x=>x.key===key);
+  if(!c || c.decision!=='lottery' || c.winner || S.spinning) return;
+  if(window.matchMedia('(prefers-reduced-motion: reduce)').matches){ guard(()=>post('draw',{key})); return; }
+  const idx=(S.room.groups||[]).findIndex(x=>x.key===key);
+  S.spinning=key; render();
+  const spin=$(`spin-${idx}`);
   let t=0;
-  const iv = setInterval(()=>{
-    if(spin) spin.textContent = nameOf(c.ids[Math.floor(Math.random()*c.ids.length)]);
+  const iv=setInterval(()=>{
+    if(spin) spin.textContent=nameOf(c.ids[Math.floor(Math.random()*c.ids.length)]);
     if(++t>16){ clearInterval(iv); S.spinning=null; guard(()=>post('draw',{key})); }
-  }, 110);
+  },110);
 }
 
 function copyText(text, btnId, label){
