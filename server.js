@@ -64,7 +64,8 @@ function stateFor(room, role, viewerId){
     you: viewerId || null,
     v: room.v,
     revealIndex: room.revealIndex || 0,
-    revealTotal: room.revealOrder ? room.revealOrder.length : 0
+    revealTotal: room.revealOrder ? room.revealOrder.length : 0,
+    revealShown: !!room.revealShown
   };
 
   if (role === 'host'){
@@ -72,7 +73,7 @@ function stateFor(room, role, viewerId){
       const id = room.revealOrder[room.revealIndex];
       const pl = room.players.find(p => p.id === id);
       const sub = room.subs[id];
-      base.reveal = pl && sub ? { id, name: pl.name, song: sub.song } : null;
+      base.reveal = pl && sub ? { id, name: pl.name, song: room.revealShown ? sub.song : null } : null;
     } else {
       base.reveal = null;
     }
@@ -114,6 +115,7 @@ function finishRoom(room){
 function enterReveal(room){
   room.revealOrder = room.pending.filter(id => room.subs[id]);
   room.revealIndex = 0;
+  room.revealShown = false;
   room.groups = [];
   room.phase = room.revealOrder.length ? 'reveal' : 'decide';
   if (!room.revealOrder.length) buildGroups(room);
@@ -129,6 +131,7 @@ function buildGroups(room){
     groups.get(k).ids.push(id);
   }
   room.groups = Array.from(groups.values());
+  room.revealShown = false;
   room.phase = 'decide';
 }
 
@@ -144,6 +147,7 @@ function doConfirm(room){
   room.groups = [];
   room.revealOrder = [];
   room.revealIndex = 0;
+  room.revealShown = false;
   room.subs = {};
 
   if (!activeIds(room).length){
@@ -186,7 +190,7 @@ const api = {
     const room = {
       code: newCode(), hostToken: token(), cap, rounds, mode,
       status:'lobby', round:1, wave:1, phase:'input',
-      players:[], pending:[], subs:{}, groups:[], revealOrder:[], revealIndex:0,
+      players:[], pending:[], subs:{}, groups:[], revealOrder:[], revealIndex:0, revealShown:false,
       acquired:[], clients:new Set(), v:0, touched:Date.now()
     };
     rooms.set(room.code, room);
@@ -213,7 +217,7 @@ const api = {
     if (room.players.length < 2) return {ok:false,error:'2名以上で開始できます。'};
     room.status='playing'; room.round=1; room.wave=1; room.phase='input';
     room.players.forEach(p=>p.ended=false);
-    room.pending=activeIds(room); room.subs={}; room.groups=[]; room.revealOrder=[]; room.revealIndex=0; room.acquired=[];
+    room.pending=activeIds(room); room.subs={}; room.groups=[]; room.revealOrder=[]; room.revealIndex=0; room.revealShown=false; room.acquired=[];
     broadcast(room);
     return {ok:true};
   },
@@ -248,11 +252,21 @@ const api = {
     return {ok:true};
   },
 
+  revealSong(room){
+    if(room.phase!=='reveal') return {ok:false,error:'いまは指名発表中ではありません。'};
+    if(!room.revealOrder.length) { buildGroups(room); broadcast(room); return {ok:true}; }
+    room.revealShown = true;
+    broadcast(room);
+    return {ok:true};
+  },
+
   nextReveal(room){
     if(room.phase!=='reveal') return {ok:false,error:'いまは指名発表中ではありません。'};
+    if(!room.revealShown) return {ok:false,error:'先にこの人の指名を表示してください。'};
     if(!room.revealOrder.length) { buildGroups(room); broadcast(room); return {ok:true}; }
     if(room.revealIndex < room.revealOrder.length-1){
       room.revealIndex += 1;
+      room.revealShown = false;
     } else {
       buildGroups(room);
     }
@@ -286,7 +300,7 @@ const api = {
     if(room.phase!=='decide') return {ok:false,error:'いまは当選者を決める段階ではありません。'};
     const c=room.groups.find(x=>x.key===body.key);
     if(!c) return {ok:false,error:'その曲の決定が見つかりません。'};
-    if(c.decision!=='solo') return {ok:false,error:'この曲は抽選に設定されています。'};
+    if(c.decision!=='solo' && c.decision!=='lottery') return {ok:false,error:'この曲は当選者を決められる状態ではありません。'};
     if(!c.ids.includes(body.playerId)) return {ok:false,error:'その参加者は候補にいません。'};
     c.winner=body.playerId;
     broadcast(room);
@@ -304,7 +318,7 @@ const api = {
   reset(room){
     room.status='lobby'; room.round=1; room.wave=1; room.phase='input';
     room.players.forEach(p=>p.ended=false);
-    room.pending=[]; room.subs={}; room.groups=[]; room.revealOrder=[]; room.revealIndex=0; room.acquired=[];
+    room.pending=[]; room.subs={}; room.groups=[]; room.revealOrder=[]; room.revealIndex=0; room.revealShown=false; room.acquired=[];
     broadcast(room);
     return {ok:true};
   }
@@ -416,7 +430,7 @@ const server = http.createServer(async (req, res) => {
       const room = findRoom(body.code);
       if (!room) return send(res, 404, { ok: false, error: '部屋が見つかりません。サーバが再起動されたかもしれません。' });
 
-      const hostOnly = ['start', 'nextReveal', 'decision', 'draw', 'winner', 'confirm', 'reset'];
+      const hostOnly = ['start', 'revealSong', 'nextReveal', 'decision', 'draw', 'winner', 'confirm', 'reset'];
       if (hostOnly.includes(action)){
         if (!isHost(room, body.token)) return send(res, 403, { ok: false, error: 'ホストだけが操作できます。' });
         return send(res, 200, api[action](room, body));

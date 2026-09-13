@@ -575,13 +575,19 @@ function viewHostGame(){
 
   if(r.phase==='reveal'){
     const rv = r.reveal;
+    const shown = !!r.revealShown && !!rv && !!rv.song;
     return head + `<div class="panel tight center">
       <h2>指名発表</h2>
       ${rv ? `<p class="note">${r.revealIndex+1} / ${r.revealTotal}</p>
-        <div class="pick"><div class="who">${esc(rv.name)}</div><div class="song">${esc(rv.song)}</div></div>
-        <p class="note">この指名を確認したら、次の人へ進んでください。</p>
-        <button class="btn" id="nextReveal" ${S.busy?'disabled':''}>${r.revealIndex+1<r.revealTotal?'次の指名を表示':'全員の指名を表示して決定へ進む'}</button>`
-        : `<p class="note">指名を準備しています。</p>`}
+        <div class="pick">
+          <div class="who">${esc(rv.name)}</div>
+          ${shown ? `<div class="song">${esc(rv.song)}</div>` : `<p class="note" style="margin-top:10px">この人の指名を確認する準備ができています。</p>`}
+        </div>
+        ${shown
+          ? `<p class="note">曲名を確認したら、次の人へ進んでください。</p>
+             <button class="btn" id="nextReveal" ${S.busy?'disabled':''}>${r.revealIndex+1<r.revealTotal?'次の指名へ':'全員の指名を確認して決定へ進む'}</button>`
+          : `<button class="btn" id="revealSong" ${S.busy?'disabled':''}>この人の指名を表示</button>`}
+      ` : `<p class="note">指名を準備しています。</p>`}
     </div>${errBox()}`;
   }
 
@@ -602,7 +608,6 @@ function viewHostGame(){
 }
 
 function decisionHost(g,i){
-  const spinning=S.spinning===g.key;
   const winnerName=g.winner?nameOf(g.winner):'';
   let body='';
   if(!g.decision){
@@ -614,9 +619,9 @@ function decisionHost(g,i){
   } else if(g.decision==='lottery'){
     body=`<div class="lottery">
       <div class="winner">抽選に設定</div>
-      ${winnerName?`<div class="winner">交渉権獲得　${esc(winnerName)}</div>`:
-        `<div class="spin" id="spin-${i}">${spinning?'&nbsp;':'抽選箱'}</div>
-         <button class="cand-btn" data-draw="${esc(g.key)}" ${spinning?'disabled':''}>この画面で抽選する</button>`}
+      ${winnerName ? `<div class="winner">交渉権獲得　${esc(winnerName)}</div>` : `
+        <p class="note">当選者をこの画面で選択してください。</p>
+        ${g.ids.map(id=>`<button class="cand-btn" data-win="${esc(g.key)}" data-id="${esc(id)}">${esc(nameOf(id))}を当選者にする</button>`).join('')}`}
       <button class="cand-btn" data-decision="solo" data-key="${esc(g.key)}">単独指名に変更する</button>
     </div>`;
   } else {
@@ -739,6 +744,7 @@ function bind(){
   on('create', ()=>guard(createRoom));
   on('join',   ()=>guard(joinRoom));
   on('start',  ()=>guard(()=>post('start')));
+  on('revealSong', ()=>guard(()=>post('revealSong')));
   on('nextReveal', ()=>guard(()=>post('nextReveal')));
   on('confirm',()=>guard(()=>post('confirm')));
   on('submit', ()=>guard(submitSong));
@@ -754,7 +760,6 @@ function bind(){
   on('sharelink',()=>{ if(navigator.share) navigator.share({title:'東方原曲ドラフト会議', text:'ドラフト会議に参加してください', url:joinUrl()}).catch(()=>{}); });
 
   document.querySelectorAll('[data-decision]').forEach(b=>b.onclick=()=>guard(()=>post('decision',{key:b.dataset.key,mode:b.dataset.decision})));
-  document.querySelectorAll('[data-draw]').forEach(b=>b.onclick=()=>drawLottery(b.dataset.draw));
   document.querySelectorAll('[data-win]').forEach(b=>b.onclick=()=>guard(()=>post('winner',{key:b.dataset.win,playerId:b.dataset.id})));
 
   const song=$('song');
@@ -808,19 +813,6 @@ async function submitSong(){
   S.draftSong = '';
 }
 
-function drawLottery(key){
-  const c=(S.room.groups||[]).find(x=>x.key===key);
-  if(!c || c.decision!=='lottery' || c.winner || S.spinning) return;
-  if(window.matchMedia('(prefers-reduced-motion: reduce)').matches){ guard(()=>post('draw',{key})); return; }
-  const idx=(S.room.groups||[]).findIndex(x=>x.key===key);
-  S.spinning=key; render();
-  const spin=$(`spin-${idx}`);
-  let t=0;
-  const iv=setInterval(()=>{
-    if(spin) spin.textContent=nameOf(c.ids[Math.floor(Math.random()*c.ids.length)]);
-    if(++t>16){ clearInterval(iv); S.spinning=null; guard(()=>post('draw',{key})); }
-  },110);
-}
 
 function copyText(text, btnId, label){
   const done = ()=>{ const b=$(btnId); if(b) b.textContent = label; };
