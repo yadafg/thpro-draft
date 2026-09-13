@@ -484,6 +484,8 @@ const server = http.createServer(async (req, res) => {
       const room = findRoom(body.code);
       if (!room) return send(res, 404, { ok: false, error: '部屋が見つかりません。サーバが再起動されたかもしれません。' });
 
+      // ゲーム進行を変更する操作はすべてホスト専用。
+      // 特に、どの楽曲を実際に抽選へ進めるか（selectLottery）も必ずここで認証する。
       const hostOnly = ['start', 'revealSong', 'nextReveal', 'decision', 'startLottery', 'selectLottery', 'winner', 'confirm', 'reset'];
       if (hostOnly.includes(action)){
         if (!isHost(room, body.token)) return send(res, 403, { ok: false, error: 'ホストだけが操作できます。' });

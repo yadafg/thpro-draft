@@ -611,7 +611,7 @@ function viewHostGame(){
     const ready=list.length===0 || done===list.length;
     return head + `<div class="panel tight">
       <h2>抽選リスト</h2>
-      <p class="note">単独指名に指定されなかった楽曲です。ホストが抽選する楽曲を選び、当選者を決定してください。</p>
+      <p class="note">ここから実際に抽選する楽曲を<strong>ホストが選択</strong>してください。参加者はこの操作を行えません。</p>
       ${list.length ? list.map((g,i)=>lotteryCandidateHost(g,i,selected===g.key)).join('') : '<p class="note">抽選対象はありません。</p>'}
       ${current ? `<div class="panel" style="margin:12px 0 0"><h2>現在の抽選</h2>
         <div class="pick contest"><div class="song">${esc(current.song)}</div>
@@ -663,7 +663,7 @@ function lotteryCandidateHost(g,i,selected){
     <div class="song">${esc(g.song)}</div>
     <div class="cands">候補者：${g.ids.map(id=>esc(nameOf(id))).join(' ／ ')}</div>
     ${done ? `<div class="winner">抽選済み　当選者：${esc(nameOf(g.winner))}</div>` :
-      selected ? `<div class="winner">現在の抽選対象</div>` : `<button class="cand-btn" data-lottery-key="${esc(g.key)}">この楽曲を抽選する</button>`}
+      selected ? `<div class="winner">現在の抽選対象</div>` : `<button class="cand-btn" data-lottery-key="${esc(g.key)}">この楽曲を抽選する（ホスト）</button>`}
   </div>`;
 }
 
